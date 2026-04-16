@@ -91,7 +91,7 @@ if __name__ == "__main__":
     if test1_passed and test2_passed:
         print("✅ All tests PASSED! Chinese input works correctly.")
         print("\n学长可以在 Linux 上测试:")
-        print("  cd ~/code/MiniCode-Python")
+        print("  cd ~/code/Astrid")
         print("  git pull")
         print("  astrid-py")
     else:

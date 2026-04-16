@@ -39,8 +39,8 @@ def _skill_roots(cwd: str | Path) -> list[tuple[Path, str]]:
     base = Path(cwd)
     home = _home_dir()
     return [
-        (base / ".mini-code" / "skills", "project"),
-        (home / ".mini-code" / "skills", "user"),
+        (base / ".astrid" / "skills", "project"),
+        (home / ".astrid" / "skills", "user"),
         (base / ".claude" / "skills", "compat_project"),
         (home / ".claude" / "skills", "compat_user"),
     ]
@@ -104,7 +104,7 @@ def load_skill(cwd: str | Path, name: str) -> LoadedSkill | None:
 
 
 def _managed_skill_root(scope: str, cwd: str | Path) -> Path:
-    return (Path(cwd) / ".mini-code" / "skills") if scope == "project" else (_home_dir() / ".mini-code" / "skills")
+    return (Path(cwd) / ".astrid" / "skills") if scope == "project" else (_home_dir() / ".astrid" / "skills")
 
 
 def install_skill(cwd: str | Path, source_path: str, name: str | None = None, scope: str = "user") -> dict[str, str]:

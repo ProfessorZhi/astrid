@@ -1,6 +1,6 @@
-"""MiniCode Python TTY Application.
+"""Astrid TTY Application.
 
-This module implements the full-screen terminal user interface for MiniCode,
+This module implements the full-screen terminal user interface for Astrid,
 including:
 - Real-time transcript rendering with tool output collapsing
 - Interactive permission approval prompts

@@ -135,7 +135,7 @@ def test_context_manager_format_summary():
 
 def test_context_manager_persistence(tmp_path):
     """Test saving and loading context state."""
-    with patch("astrid.context_manager.MINI_CODE_DIR", tmp_path):
+    with patch("astrid.context_manager.ASTRID_DIR", tmp_path):
         manager = ContextManager(model="claude-sonnet-4-20250514")
         manager.add_message({"role": "user", "content": "Test"})
         

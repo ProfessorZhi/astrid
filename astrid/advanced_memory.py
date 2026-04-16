@@ -1,4 +1,4 @@
-"""Advanced memory system for MiniCode-Python.
+"""Advanced memory system for Astrid.
 
 基于参考仓库 https://github.com/Ydy4HYW7ExA/agent 的理论和架构，
 实现分层记忆系统，包含：
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable
 from datetime import datetime
 
-from astrid.config import MINI_CODE_DIR
+from astrid.config import ASTRID_DIR
 from astrid.state import Store
 
 
@@ -381,7 +381,7 @@ class AdvancedMemoryManager:
     
     def _load_skills(self) -> None:
         """加载技能定义"""
-        skills_file = MINI_CODE_DIR / "advanced_skills.json"
+        skills_file = ASTRID_DIR / "advanced_skills.json"
         
         if not skills_file.exists():
             return
@@ -396,7 +396,7 @@ class AdvancedMemoryManager:
     
     def _load_terminology(self) -> None:
         """加载术语定义"""
-        terminology_file = MINI_CODE_DIR / "advanced_terminology.json"
+        terminology_file = ASTRID_DIR / "advanced_terminology.json"
         
         if not terminology_file.exists():
             return
@@ -412,15 +412,15 @@ class AdvancedMemoryManager:
     def _get_scope_path(self, scope: MemoryScope) -> Path:
         """获取范围的路径"""
         if scope == MemoryScope.SYSTEM:
-            return MINI_CODE_DIR / "system_memory"
+            return ASTRID_DIR / "system_memory"
         elif scope == MemoryScope.USER:
-            return MINI_CODE_DIR / "user_memory"
+            return ASTRID_DIR / "user_memory"
         elif scope == MemoryScope.PROJECT:
-            return self.workspace / ".mini-code-memory"
+            return self.workspace / ".astrid-memory"
         elif scope == MemoryScope.LOCAL:
-            return self.workspace / ".mini-code-memory-local"
+            return self.workspace / ".astrid-memory-local"
         else:  # SESSION
-            return self.workspace / ".mini-code-session-memory"
+            return self.workspace / ".astrid-session-memory"
     
     def _save_scope(self, scope: MemoryScope) -> None:
         """保存特定范围的记忆"""
@@ -441,7 +441,7 @@ class AdvancedMemoryManager:
     
     def _save_skills(self) -> None:
         """保存技能定义"""
-        skills_file = MINI_CODE_DIR / "advanced_skills.json"
+        skills_file = ASTRID_DIR / "advanced_skills.json"
         skills_file.parent.mkdir(parents=True, exist_ok=True)
         
         data = {
@@ -456,7 +456,7 @@ class AdvancedMemoryManager:
     
     def _save_terminology(self) -> None:
         """保存术语定义"""
-        terminology_file = MINI_CODE_DIR / "advanced_terminology.json"
+        terminology_file = ASTRID_DIR / "advanced_terminology.json"
         terminology_file.parent.mkdir(parents=True, exist_ok=True)
         
         data = {

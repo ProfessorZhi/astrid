@@ -54,7 +54,7 @@ python -m astrid.main --install
 1. 按 `Win+R` 输入 `sysdm.cpl`
 2. 高级 → 环境变量
 3. 在用户变量中找到 `Path`
-4. 添加：`%USERPROFILE%\.mini-code\bin`
+4. 添加：`%USERPROFILE%\.astrid\bin`
 5. 重启终端后使用：`astrid.bat`
 </details>
 
@@ -163,7 +163,7 @@ astrid-py
 
 ### 设置文件
 
-`~/.mini-code/settings.json`：
+`~/.astrid/settings.json`：
 
 ```json
 {
@@ -189,7 +189,7 @@ pip install -e ".[dev]"
 pytest
 
 # Mock 模式（无需 API 密钥）
-MINI_CODE_MODEL_MODE=mock python -m astrid.main
+ASTRID_MODEL_MODE=mock python -m astrid.main
 ```
 
 ---
@@ -253,7 +253,7 @@ python -m astrid.main --install
 1. Press `Win+R`, type `sysdm.cpl`
 2. Advanced → Environment Variables
 3. Find `Path` in User Variables
-4. Add: `%USERPROFILE%\.mini-code\bin`
+4. Add: `%USERPROFILE%\.astrid\bin`
 5. Restart terminal, then use: `astrid.bat`
 </details>
 
@@ -362,7 +362,7 @@ astrid-py
 
 ### Settings File
 
-`~/.mini-code/settings.json`:
+`~/.astrid/settings.json`:
 
 ```json
 {
@@ -382,7 +382,7 @@ astrid-py
 | `ANTHROPIC_AUTH_TOKEN` | Auth token (alternative) | — |
 | `ANTHROPIC_BASE_URL` | API base URL | `https://api.anthropic.com` |
 | `ANTHROPIC_MODEL` | Model name | — |
-| `MINI_CODE_MODEL_MODE` | Set to `mock` for testing | — |
+| `ASTRID_MODEL_MODE` | Set to `mock` for testing | — |
 
 ---
 
@@ -424,7 +424,7 @@ pip install -e ".[dev]"
 pytest
 
 # Mock mode (no API key needed)
-MINI_CODE_MODEL_MODE=mock python -m astrid.main
+ASTRID_MODEL_MODE=mock python -m astrid.main
 ```
 
 ### Project Stats
@@ -467,6 +467,6 @@ MIT — see [LICENSE](LICENSE) for details.
 
 *轻量终端 AI 编程助手 / Lightweight Terminal AI Coding Assistant*
 
-[⬆ Back to Top](#astrid-python--astrid-python-中文版)
+[⬆ Back to Top](#astrid--astrid-中文版)
 
 </div>

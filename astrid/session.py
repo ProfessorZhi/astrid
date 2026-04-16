@@ -1,7 +1,7 @@
 """Session persistence and resume module.
 
 Provides session data structures, autosave mechanism, and resume capabilities
-to allow MiniCode to save and restore conversation state across restarts.
+to allow Astrid to save and restore conversation state across restarts.
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
-from astrid.config import MINI_CODE_DIR
+from astrid.config import ASTRID_DIR
 
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-SESSIONS_DIR = MINI_CODE_DIR / "sessions"
+SESSIONS_DIR = ASTRID_DIR / "sessions"
 AUTOSAVE_INTERVAL_SECONDS = 30  # Minimum seconds between autosaves
 
 
@@ -97,7 +97,7 @@ def _session_file(session_id: str) -> Path:
 
 def _session_index_file() -> Path:
     """Return path to the session index file."""
-    return MINI_CODE_DIR / "sessions_index.json"
+    return ASTRID_DIR / "sessions_index.json"
 
 
 def _load_session_index() -> dict[str, SessionMetadata]:
@@ -118,7 +118,7 @@ def _load_session_index() -> dict[str, SessionMetadata]:
 
 def _save_session_index(index: dict[str, SessionMetadata]) -> None:
     """Save the session index."""
-    MINI_CODE_DIR.mkdir(parents=True, exist_ok=True)
+    ASTRID_DIR.mkdir(parents=True, exist_ok=True)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     serializable = {
         sid: {

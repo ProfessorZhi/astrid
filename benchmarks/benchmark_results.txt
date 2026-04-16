@@ -1,4 +1,4 @@
-MiniCode Python Benchmark Results
+Astrid Benchmark Results
 ================================================================================
 
 render_panel (100 lines)                     0.17 ms  (6012983.23 ops/sec)     0.0 MB  106x8

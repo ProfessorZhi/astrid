@@ -225,7 +225,7 @@ class StdioMcpClient:
                     {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {},
-                        "clientInfo": {"name": "mini-code", "version": "0.1.0"},
+                        "clientInfo": {"name": "astrid", "version": "0.1.0"},
                     },
                     timeout_seconds=2.0,
                 )

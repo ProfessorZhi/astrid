@@ -1,4 +1,4 @@
-"""Performance benchmark suite for MiniCode Python.
+"""Performance benchmark suite for Astrid.
 
 Measures performance across key areas:
 1. Rendering performance (terminal UI)
@@ -324,7 +324,7 @@ def run_all_benchmarks() -> list[BenchmarkResult]:
     all_results = []
     
     print("=" * 80)
-    print("MiniCode Python Performance Benchmark")
+    print("Astrid Performance Benchmark")
     print("=" * 80)
     print()
 
@@ -394,7 +394,7 @@ if __name__ == "__main__":
     # Save results
     output_file = Path(__file__).parent / "benchmark_results.txt"
     with open(output_file, "w", encoding="utf-8") as f:
-        f.write("MiniCode Python Benchmark Results\n")
+        f.write("Astrid Benchmark Results\n")
         f.write("=" * 80 + "\n\n")
         for r in results:
             f.write(format_result(r) + "\n")

@@ -19,7 +19,7 @@ python -m astrid.main --install
 - **ANTHROPIC_BASE_URL**: API 地址（默认 `https://api.anthropic.com`）
 - **ANTHROPIC_AUTH_TOKEN**: API 密钥
 
-配置会保存到 `~/.mini-code/settings.json`
+配置会保存到 `~/.astrid/settings.json`
 
 ### 2. 启动
 
@@ -28,7 +28,7 @@ python -m astrid.main --install
 python -m astrid.main
 
 # 或使用 mock 模式（无需 API，用于测试）
-set MINI_CODE_MODEL_MODE=mock
+set ASTRID_MODEL_MODE=mock
 python -m astrid.main
 ```
 
@@ -178,7 +178,7 @@ python -m astrid.main --help
 ### 自动保存
 
 - 每 30 秒自动保存当前会话
-- 保存位置：`~/.mini-code/sessions/`
+- 保存位置：`~/.astrid/sessions/`
 - 包含：消息历史、transcript、权限状态、skills、MCP 配置
 
 ### 手动恢复
@@ -205,7 +205,7 @@ python -m astrid.main --resume abc123de
 ### 会话文件结构
 
 ```
-~/.mini-code/
+~/.astrid/
 ├── settings.json          # 用户设置
 ├── history.json           # 输入历史（最近 200 条）
 ├── permissions.json       # 权限规则
@@ -284,7 +284,7 @@ assistant
 
 Action Required              │ Permission
 ───────────────────────────────────────────
-mini-code wants to apply a file modification
+astrid wants to apply a file modification
 
 target: D:\project\main.py
 
@@ -310,14 +310,14 @@ target: D:\project\main.py
 
 ### 配置文件优先级
 
-1. `~/.mini-code/settings.json` - 用户级设置
-2. `~/.mini-code/mcp.json` - 用户级 MCP 配置
+1. `~/.astrid/settings.json` - 用户级设置
+2. `~/.astrid/mcp.json` - 用户级 MCP 配置
 3. `.mcp.json` - 项目级 MCP 配置
 4. 环境变量
 
 ### 示例配置
 
-`~/.mini-code/settings.json`:
+`~/.astrid/settings.json`:
 
 ```json
 {
@@ -340,11 +340,11 @@ target: D:\project\main.py
 
 ```bash
 # Windows
-set MINI_CODE_MODEL_MODE=mock
+set ASTRID_MODEL_MODE=mock
 python -m astrid.main
 
 # Unix/Linux/macOS
-export MINI_CODE_MODEL_MODE=mock
+export ASTRID_MODEL_MODE=mock
 python -m astrid.main
 ```
 
@@ -387,7 +387,7 @@ tools on | skills on
 python -m astrid.main --install
 ```
 
-或创建 `~/.mini-code/settings.json`：
+或创建 `~/.astrid/settings.json`：
 
 ```json
 {
@@ -411,8 +411,8 @@ python -m astrid.main --install
 **解决**: 检查会话文件：
 
 ```bash
-ls ~/.mini-code/sessions/
-cat ~/.mini-code/sessions_index.json
+ls ~/.astrid/sessions/
+cat ~/.astrid/sessions_index.json
 ```
 
 ---

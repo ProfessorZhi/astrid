@@ -30,7 +30,7 @@ def temp_session_dir(tmp_path):
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir()
     with patch("astrid.session.SESSIONS_DIR", sessions_dir), \
-         patch("astrid.session.MINI_CODE_DIR", tmp_path):
+         patch("astrid.session.ASTRID_DIR", tmp_path):
         yield sessions_dir
 
 

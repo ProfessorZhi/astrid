@@ -36,7 +36,7 @@ def _render_banner(runtime: dict | None, cwd: str, permission_summary: list[str]
     mem_count = counts.get("memoryCount", 0)
     lines = [
         "╔══════════════════════════════════════════════════════════╗",
-        "║  🤖 MiniCode Python - Your Terminal Coding Assistant    ║",
+        "║  🤖 Astrid - Your Terminal Coding Assistant    ║",
         "╠══════════════════════════════════════════════════════════╣",
         f"║  Model: {model:<46} ║",
         f"║  CWD: {cwd:<50} ║",
@@ -101,7 +101,7 @@ def _save_transcript_file(cwd: str, permissions, transcript: list[TranscriptEntr
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="MiniCode Python - A lightweight terminal coding assistant",
+        description="Astrid - A lightweight terminal coding assistant",
         add_help=True,
     )
     parser.add_argument(
@@ -179,10 +179,10 @@ def main() -> None:
             "🔧 How to fix this:\n"
             "  1. Set your model name: export ANTHROPIC_MODEL=claude-sonnet-4-20250514\n"
             "  2. Set your API key: export ANTHROPIC_API_KEY=sk-ant-...\n"
-            "  3. Or edit ~/.mini-code/settings.json:\n"
+            "  3. Or edit ~/.astrid/settings.json:\n"
             '     {"model": "claude-sonnet-4-20250514", "env": {"ANTHROPIC_API_KEY": "sk-ant-..."}}\n'
-            "  4. Restart MiniCode\n\n"
-            "📖 For more info: https://github.com/ProfessorZhi/MiniCode-Python\n"
+            "  4. Restart Astrid\n\n"
+            "📖 For more info: https://github.com/ProfessorZhi/Astrid\n"
             "   Falling back to mock model for now...\n",
             file=sys.stderr,
         )
@@ -244,7 +244,7 @@ def main() -> None:
     permissions = PermissionManager(cwd, prompt=prompt_handler)
     model = (
         MockModelAdapter()
-        if runtime is None or os.environ.get("MINI_CODE_MODEL_MODE") == "mock"
+        if runtime is None or os.environ.get("ASTRID_MODEL_MODE") == "mock"
         else AnthropicModelAdapter(runtime, tools)
     )
     
@@ -253,7 +253,7 @@ def main() -> None:
         try:
             result = bootstrap_system.execute_bootstrap_cycle({
                 "context": "initial_startup",
-                "system_version": "MiniCode-Python",
+                "system_version": "Astrid",
                 "timestamp": time.time(),
             })
             logger.info("Initial bootstrap cycle completed: %s", result.get("status", "unknown"))
@@ -299,7 +299,7 @@ def main() -> None:
     )
     
     # 显示快速入门指南
-    if not sys.stdin.isatty() or os.environ.get("MINI_CODE_SHOW_GUIDE", "1") == "1":
+    if not sys.stdin.isatty() or os.environ.get("ASTRID_SHOW_GUIDE", "1") == "1":
         print(_render_quick_start())
     else:
         print("")

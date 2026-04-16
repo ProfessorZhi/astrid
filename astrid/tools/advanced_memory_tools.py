@@ -1,4 +1,4 @@
-"""Advanced memory tools for MiniCode-Python.
+"""Advanced memory tools for Astrid.
 
 Exposes the advanced memory system capabilities as tools that the Agent can invoke.
 """

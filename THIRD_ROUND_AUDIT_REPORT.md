@@ -174,7 +174,7 @@ def compact_messages(self) -> list[dict[str, Any]]:
 
 ```python
 def _load_pricing() -> dict[str, dict[str, float]]:
-    pricing_file = MINI_CODE_DIR / "model_pricing.json"
+    pricing_file = ASTRID_DIR / "model_pricing.json"
     if pricing_file.exists():
         try:
             return json.loads(pricing_file.read_text())

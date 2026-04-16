@@ -1,4 +1,4 @@
-"""Multi-round stress test for MiniCode Python performance."""
+"""Multi-round stress test for Astrid performance."""
 
 import timeit
 import sys
@@ -95,7 +95,7 @@ def test_string_width():
 
 def main():
     print("=" * 80)
-    print("MiniCode Python Multi-Round Performance Stress Test")
+    print("Astrid Multi-Round Performance Stress Test")
     print("=" * 80)
     
     # Token estimation test

@@ -1,4 +1,4 @@
-"""Governance audit tools for MiniCode Python.
+"""Governance audit tools for Astrid.
 
 Provides dependency direction checking and sink rule validation
 based on the engineering governance framework.

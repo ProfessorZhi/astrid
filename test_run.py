@@ -1,11 +1,11 @@
-"""Quick test to verify MiniCode Python TUI functionality in mock mode."""
+"""Quick test to verify Astrid TUI functionality in mock mode."""
 
 import os
 import sys
 from pathlib import Path
 
 # Set mock mode before importing
-os.environ["MINI_CODE_MODEL_MODE"] = "mock"
+os.environ["ASTRID_MODEL_MODE"] = "mock"
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -18,7 +18,7 @@ from astrid.tty_app import run_tty_app
 
 def main():
     cwd = str(Path.cwd())
-    print("Starting MiniCode Python in mock mode...")
+    print("Starting Astrid in mock mode...")
     print()
     
     try:

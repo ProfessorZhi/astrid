@@ -1,4 +1,4 @@
-"""Morandi color theme for MiniCode TUI.
+"""Morandi color theme for Astrid TUI.
 
 A low-saturation palette inspired by the Rust version's ColorTheme.
 All colors are expressed as ANSI 256-color or 24-bit (RGB) escape codes.

@@ -13,7 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from astrid.config import MINI_CODE_DIR
+from astrid.config import ASTRID_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +365,7 @@ def format_task_progress_bar(task_list: TaskList, width: int = 30) -> str:
 
 def save_task_list(task_list: TaskList, session_id: str) -> None:
     """Save task list to disk."""
-    tasks_dir = MINI_CODE_DIR / "tasks"
+    tasks_dir = ASTRID_DIR / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
     
     task_file = tasks_dir / f"{session_id}.json"
@@ -393,7 +393,7 @@ def save_task_list(task_list: TaskList, session_id: str) -> None:
 
 def load_task_list(session_id: str) -> TaskList | None:
     """Load task list from disk."""
-    task_file = MINI_CODE_DIR / "tasks" / f"{session_id}.json"
+    task_file = ASTRID_DIR / "tasks" / f"{session_id}.json"
     if not task_file.exists():
         return None
     

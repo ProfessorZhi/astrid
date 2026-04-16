@@ -12,7 +12,7 @@ ERASE_SCREEN_AND_HOME = "\u001b[2J\u001b[H"
 #   ?1003h  — any-event tracking (reports all mouse events including scroll without button)
 #   ?1006h  — SGR extended encoding (supports coordinates > 223, required for modern terminals)
 # Strategy: use ?1000h (basic) + ?1003h (any-event for reliable scroll) + ?1006h (SGR format)
-# This matches the TypeScript mini-code version behavior (?1000h + ?1006h) but adds
+# This matches the TypeScript astrid version behavior (?1000h + ?1006h) but adds
 # ?1003h for better SSH/remote terminal scroll wheel support.
 ENABLE_MOUSE_TRACKING = "\u001b[?1000h\u001b[?1003h\u001b[?1006h"
 DISABLE_MOUSE_TRACKING = "\u001b[?1006l\u001b[?1003l\u001b[?1000l"

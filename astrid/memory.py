@@ -1,9 +1,9 @@
 """Layered memory system for cross-session knowledge retention.
 
 Provides three-tier memory hierarchy:
-- User memory (~/.mini-code/memory/) - cross-project, persistent
-- Project memory (.mini-code-memory/) - shared across sessions, can be versioned
-- Local memory (.mini-code-memory-local/) - project-specific, not checked in
+- User memory (~/.astrid/memory/) - cross-project, persistent
+- Project memory (.astrid-memory/) - shared across sessions, can be versioned
+- Local memory (.astrid-memory-local/) - project-specific, not checked in
 
 Memory is automatically injected into system prompts to give the agent
 context about past decisions, codebase patterns, and project conventions.
@@ -18,7 +18,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from astrid.config import MINI_CODE_DIR
+from astrid.config import ASTRID_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -27,9 +27,9 @@ from astrid.config import MINI_CODE_DIR
 
 class MemoryScope(str, Enum):
     """Memory scope levels."""
-    USER = "user"       # Cross-project, ~/.mini-code/memory/
-    PROJECT = "project" # Project-shared, .mini-code-memory/
-    LOCAL = "local"     # Project-local, .mini-code-memory-local/
+    USER = "user"       # Cross-project, ~/.astrid/memory/
+    PROJECT = "project" # Project-shared, .astrid-memory/
+    LOCAL = "local"     # Project-local, .astrid-memory-local/
 
 
 @dataclass
@@ -182,9 +182,9 @@ class MemoryPaths:
         workspace_path = Path(workspace)
         
         return cls(
-            user_memory=MINI_CODE_DIR / "memory",
-            project_memory=workspace_path / ".mini-code-memory",
-            local_memory=workspace_path / ".mini-code-memory-local",
+            user_memory=ASTRID_DIR / "memory",
+            project_memory=workspace_path / ".astrid-memory",
+            local_memory=workspace_path / ".astrid-memory-local",
         )
 
 

@@ -1,4 +1,4 @@
-"""Auto Mode for MiniCode Python.
+"""Auto Mode for Astrid.
 
 Inspired by Claude Code's auto mode which sits between standard approval
 and --dangerously-skip-permissions. It includes:

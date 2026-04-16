@@ -1,4 +1,4 @@
-"""Functional Completeness Test Suite for MiniCode Python.
+"""Functional Completeness Test Suite for Astrid.
 
 Tests all core modules after 7 rounds of optimization:
 1. Startup & Configuration

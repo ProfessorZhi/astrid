@@ -124,9 +124,9 @@ print(tm.get_status())
 
 **功能**:
 - ✅ 三层记忆架构：
-  - **User Memory** (`~/.mini-code/memory/`) - 跨项目持久化
-  - **Project Memory** (`.mini-code-memory/`) - 项目共享，可版本控制
-  - **Local Memory** (`.mini-code-memory-local/`) - 项目本地，不检入
+  - **User Memory** (`~/.astrid/memory/`) - 跨项目持久化
+  - **Project Memory** (`.astrid-memory/`) - 项目共享，可版本控制
+  - **Local Memory** (`.astrid-memory-local/`) - 项目本地，不检入
 - ✅ MEMORY.md 自动生成与解析
 - ✅ 条目搜索与过滤
 - ✅ 分类管理（Architecture/Convention/Decision/Pattern）

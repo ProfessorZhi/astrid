@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 
-MINI_CODE_DIR = Path.home() / ".mini-code"
-MINI_CODE_SETTINGS_PATH = MINI_CODE_DIR / "settings.json"
-MINI_CODE_HISTORY_PATH = MINI_CODE_DIR / "history.json"
-MINI_CODE_PERMISSIONS_PATH = MINI_CODE_DIR / "permissions.json"
-MINI_CODE_MCP_PATH = MINI_CODE_DIR / "mcp.json"
+ASTRID_DIR = Path.home() / ".astrid"
+ASTRID_SETTINGS_PATH = ASTRID_DIR / "settings.json"
+ASTRID_HISTORY_PATH = ASTRID_DIR / "history.json"
+ASTRID_PERMISSIONS_PATH = ASTRID_DIR / "permissions.json"
+ASTRID_MCP_PATH = ASTRID_DIR / "mcp.json"
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 
 # 已知的合法模型名称（用于拼写检查提示）
@@ -90,9 +90,9 @@ def merge_settings(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
 
 def load_effective_settings(cwd: str | Path | None = None) -> dict[str, Any]:
     claude_settings = read_settings_file(CLAUDE_SETTINGS_PATH)
-    global_mcp = read_mcp_config_file(MINI_CODE_MCP_PATH)
+    global_mcp = read_mcp_config_file(ASTRID_MCP_PATH)
     project_mcp = read_mcp_config_file(project_mcp_path(cwd))
-    mini_code_settings = read_settings_file(MINI_CODE_SETTINGS_PATH)
+    mini_code_settings = read_settings_file(ASTRID_SETTINGS_PATH)
 
     return merge_settings(
         merge_settings(
@@ -104,10 +104,10 @@ def load_effective_settings(cwd: str | Path | None = None) -> dict[str, Any]:
 
 
 def save_mini_code_settings(updates: dict[str, Any]) -> None:
-    MINI_CODE_DIR.mkdir(parents=True, exist_ok=True)
-    existing = read_settings_file(MINI_CODE_SETTINGS_PATH)
+    ASTRID_DIR.mkdir(parents=True, exist_ok=True)
+    existing = read_settings_file(ASTRID_SETTINGS_PATH)
     next_settings = merge_settings(existing, updates)
-    MINI_CODE_SETTINGS_PATH.write_text(
+    ASTRID_SETTINGS_PATH.write_text(
         json.dumps(next_settings, indent=2) + "\n",
         encoding="utf-8",
     )
@@ -117,7 +117,7 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
     effective = load_effective_settings(cwd)
     env = {**dict(effective.get("env", {})), **os.environ}
     model = (
-        os.environ.get("MINI_CODE_MODEL")
+        os.environ.get("ASTRID_MODEL")
         or effective.get("model")
         or str(env.get("ANTHROPIC_MODEL", "")).strip()
     )
@@ -125,9 +125,9 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
     auth_token = str(env.get("ANTHROPIC_AUTH_TOKEN", "")).strip() or None
     api_key = str(env.get("ANTHROPIC_API_KEY", "")).strip() or None
     raw_max_output_tokens = (
-        os.environ.get("MINI_CODE_MAX_OUTPUT_TOKENS")
+        os.environ.get("ASTRID_MAX_OUTPUT_TOKENS")
         or effective.get("maxOutputTokens")
-        or env.get("MINI_CODE_MAX_OUTPUT_TOKENS")
+        or env.get("ASTRID_MAX_OUTPUT_TOKENS")
     )
     max_output_tokens = None
     if raw_max_output_tokens is not None:
@@ -139,7 +139,7 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
             max_output_tokens = None
 
     if not model:
-        raise RuntimeError("No model configured. Set ~/.mini-code/settings.json or ANTHROPIC_MODEL.")
+        raise RuntimeError("No model configured. Set ~/.astrid/settings.json or ANTHROPIC_MODEL.")
     if not auth_token and not api_key:
         raise RuntimeError(
             "No auth configured. Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY."
@@ -152,12 +152,12 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
         "apiKey": api_key,
         "maxOutputTokens": max_output_tokens,
         "mcpServers": effective.get("mcpServers", {}),
-        "sourceSummary": f"config: {MINI_CODE_SETTINGS_PATH} > {CLAUDE_SETTINGS_PATH} > process.env",
+        "sourceSummary": f"config: {ASTRID_SETTINGS_PATH} > {CLAUDE_SETTINGS_PATH} > process.env",
     }
 
 
 def get_mcp_config_path(scope: str, cwd: str | Path | None = None) -> Path:
-    return project_mcp_path(cwd) if scope == "project" else MINI_CODE_MCP_PATH
+    return project_mcp_path(cwd) if scope == "project" else ASTRID_MCP_PATH
 
 
 def load_scoped_mcp_servers(scope: str, cwd: str | Path | None = None) -> dict[str, Any]:
@@ -211,12 +211,12 @@ def validate_config(cwd: str | Path | None = None) -> tuple[bool, list[str]]:
         
         # 提供友好的错误消息
         if "No model configured" in error_msg:
-            suggestion = _suggest_model_name(os.environ.get("MINI_CODE_MODEL", ""))
+            suggestion = _suggest_model_name(os.environ.get("ASTRID_MODEL", ""))
             help_msg = (
                 f"Error: {error_msg}\n\n"
                 "How to fix:\n"
                 "  1. Set model name: export ANTHROPIC_MODEL=claude-sonnet-4-20250514\n"
-                "  2. Or edit ~/.mini-code/settings.json:\n"
+                "  2. Or edit ~/.astrid/settings.json:\n"
                 f'     {{"model": "claude-sonnet-4-20250514"}}\n'
             )
             if suggestion:
@@ -229,7 +229,7 @@ def validate_config(cwd: str | Path | None = None) -> tuple[bool, list[str]]:
                 f"Error: {error_msg}\n\n"
                 "How to fix:\n"
                 "  1. Set API key: export ANTHROPIC_API_KEY=sk-ant-...\n"
-                "  2. Or edit ~/.mini-code/settings.json:\n"
+                "  2. Or edit ~/.astrid/settings.json:\n"
                 '     {"env": {"ANTHROPIC_API_KEY": "sk-ant-..."}}\n'
             )
             errors.append(help_msg)

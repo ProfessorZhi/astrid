@@ -12,7 +12,7 @@ def render_input_prompt(current_input: str, cursor_offset: int, compact: bool = 
     """Render the input prompt line.
 
     Format matches the Rust version:
-      mini-code> <input with cursor>
+      astrid> <input with cursor>
 
     When compact=True (small terminal), the hint bar is hidden to save lines.
     """
@@ -27,8 +27,8 @@ def render_input_prompt(current_input: str, cursor_offset: int, compact: bool = 
         else f"{ITALIC} Type a message or /help for commands{RESET}"
     )
 
-    # Prompt: "mini-code> " prefix (matches Rust render_screen)
-    prefix = f"{t.input}{BOLD}mini-code>{RESET} "
+    # Prompt: "astrid> " prefix (matches Rust render_screen)
+    prefix = f"{t.input}{BOLD}astrid>{RESET} "
     input_line = f" {prefix}{before}{HIGHLIGHT_BG}{BRIGHT_GREEN}{current}{RESET}{after}{DIM}{placeholder}{RESET}"
 
     if compact:

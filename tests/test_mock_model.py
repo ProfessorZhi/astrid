@@ -29,4 +29,4 @@ def test_mock_model_default_message_is_readable() -> None:
     step = adapter.next([{"role": "user", "content": "hello"}])
 
     assert step.type == "assistant"
-    assert "minimal MiniCode Python shell" in step.content
+    assert "minimal Astrid shell" in step.content

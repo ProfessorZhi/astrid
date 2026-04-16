@@ -1,4 +1,4 @@
-"""Logging configuration for MiniCode Python.
+"""Logging configuration for Astrid.
 
 Provides structured logging with:
 -分级日志（DEBUG/INFO/WARNING/ERROR）
@@ -13,10 +13,10 @@ import os
 import sys
 from pathlib import Path
 
-from astrid.config import MINI_CODE_DIR
+from astrid.config import ASTRID_DIR
 
 # 日志文件路径
-LOG_FILE = MINI_CODE_DIR / "astrid.log"
+LOG_FILE = ASTRID_DIR / "astrid.log"
 
 # 日志格式
 CONSOLE_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -28,7 +28,7 @@ def setup_logging(
     log_to_file: bool = True,
     log_to_console: bool = True,
 ) -> logging.Logger:
-    """配置 MiniCode 日志系统。
+    """配置 Astrid 日志系统。
     
     Args:
         level: 日志级别（DEBUG/INFO/WARNING/ERROR）
@@ -40,7 +40,7 @@ def setup_logging(
     """
     # 确保日志目录存在
     if log_to_file:
-        MINI_CODE_DIR.mkdir(parents=True, exist_ok=True)
+        ASTRID_DIR.mkdir(parents=True, exist_ok=True)
     
     # 创建根 logger
     root_logger = logging.getLogger("astrid")

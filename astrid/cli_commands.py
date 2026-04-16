@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from astrid.poly_commands import create_builtin_commands, CommandRegistry
 from astrid.config import (
     CLAUDE_SETTINGS_PATH,
-    MINI_CODE_MCP_PATH,
-    MINI_CODE_PERMISSIONS_PATH,
-    MINI_CODE_SETTINGS_PATH,
+    ASTRID_MCP_PATH,
+    ASTRID_PERMISSIONS_PATH,
+    ASTRID_SETTINGS_PATH,
     load_runtime_config,
     save_mini_code_settings,
 )
@@ -31,16 +31,16 @@ SLASH_COMMANDS = [
     SlashCommand("/skills", "/skills [exec <name>]", "List or execute registered skills."),
     SlashCommand("/bootstrap", "/bootstrap", "Show bootstrap system status and improvement history."),
     SlashCommand("/config", "/config", "Show configuration diagnostics and validation."),
-    SlashCommand("/history", "/history", "Show recent prompt history from ~/.mini-code/history.json."),
+    SlashCommand("/history", "/history", "Show recent prompt history from ~/.astrid/history.json."),
     SlashCommand("/clear", "/clear", "Clear the current transcript view."),
     SlashCommand("/retry", "/retry", "Retry the last natural-language prompt in this session."),
     SlashCommand("/transcript-save", "/transcript-save <path>", "Save the current session transcript to a text file."),
     SlashCommand("/model", "/model", "Show the current model."),
-    SlashCommand("/model", "/model <model-name>", "Persist a model override into ~/.mini-code/settings.json."),
-    SlashCommand("/config-paths", "/config-paths", "Show mini-code and Claude fallback settings paths."),
+    SlashCommand("/model", "/model <model-name>", "Persist a model override into ~/.astrid/settings.json."),
+    SlashCommand("/config-paths", "/config-paths", "Show astrid and Claude fallback settings paths."),
     SlashCommand("/mcp", "/mcp", "Show configured MCP servers and connection state."),
-    SlashCommand("/permissions", "/permissions", "Show mini-code permission storage path."),
-    SlashCommand("/exit", "/exit", "Exit mini-code."),
+    SlashCommand("/permissions", "/permissions", "Show astrid permission storage path."),
+    SlashCommand("/exit", "/exit", "Exit astrid."),
     SlashCommand("/debug", "/debug", "Show scroll and terminal diagnostics."),
     SlashCommand("/ls", "/ls [path]", "List files in a directory."),
     SlashCommand("/grep", "/grep <pattern>::[path]", "Search text in files."),
@@ -63,7 +63,7 @@ def format_slash_commands() -> str:
     command_groups = {
         "🔧 Core Commands": [
             ("/help", "Show this help message"),
-            ("/exit", "Exit mini-code"),
+            ("/exit", "Exit astrid"),
             ("/clear", "Clear the current transcript view"),
             ("/history", "Show recent prompt history"),
         ],
@@ -132,20 +132,20 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
     if user_input == "/config-paths":
         return "\n".join(
             [
-                f"mini-code settings: {MINI_CODE_SETTINGS_PATH}",
-                f"mini-code permissions: {MINI_CODE_PERMISSIONS_PATH}",
-                f"mini-code mcp: {MINI_CODE_MCP_PATH}",
+                f"astrid settings: {ASTRID_SETTINGS_PATH}",
+                f"astrid permissions: {ASTRID_PERMISSIONS_PATH}",
+                f"astrid mcp: {ASTRID_MCP_PATH}",
                 f"compat fallback: {CLAUDE_SETTINGS_PATH}",
             ]
         )
 
     if user_input == "/permissions":
-        return f"permission store: {MINI_CODE_PERMISSIONS_PATH}"
+        return f"permission store: {ASTRID_PERMISSIONS_PATH}"
 
     if user_input == "/skills":
         skills = tools.get_skills() if tools else []
         if not skills:
-            return "No skills discovered. Add skills under ~/.mini-code/skills/<name>/SKILL.md, .mini-code/skills/<name>/SKILL.md, .claude/skills/<name>/SKILL.md, or ~/.claude/skills/<name>/SKILL.md."
+            return "No skills discovered. Add skills under ~/.astrid/skills/<name>/SKILL.md, .astrid/skills/<name>/SKILL.md, .claude/skills/<name>/SKILL.md, or ~/.claude/skills/<name>/SKILL.md."
         return "\n".join(
             f"{skill['name']}  {skill['description']}  [{skill['source']}]"
             for skill in skills
@@ -290,7 +290,7 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
     if user_input == "/mcp":
         servers = tools.get_mcp_servers() if tools else []
         if not servers:
-            return "No MCP servers configured. Add mcpServers to ~/.mini-code/settings.json, ~/.mini-code/mcp.json, or project .mcp.json."
+            return "No MCP servers configured. Add mcpServers to ~/.astrid/settings.json, ~/.astrid/mcp.json, or project .mcp.json."
         lines = []
         for server in servers:
             suffix = f"  error={server['error']}" if server.get("error") else ""
@@ -330,6 +330,6 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
         if not model:
             return "usage: /model <model-name>"
         save_mini_code_settings({"model": model})
-        return f"saved model={model} to {MINI_CODE_SETTINGS_PATH}"
+        return f"saved model={model} to {ASTRID_SETTINGS_PATH}"
 
     return None

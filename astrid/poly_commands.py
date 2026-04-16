@@ -1,4 +1,4 @@
-"""Polyorphic command system for MiniCode Python.
+"""Polyorphic command system for Astrid.
 
 Inspired by Claude Code's three command types:
 - PromptCommand: Expands into system prompt

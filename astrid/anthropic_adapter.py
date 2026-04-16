@@ -20,7 +20,7 @@ def _sleep(milliseconds: int) -> None:
 
 def _get_retry_limit() -> int:
     try:
-        value = int(float(__import__("os").environ.get("MINI_CODE_MAX_RETRIES", DEFAULT_MAX_RETRIES)))
+        value = int(float(__import__("os").environ.get("ASTRID_MAX_RETRIES", DEFAULT_MAX_RETRIES)))
     except ValueError:
         value = DEFAULT_MAX_RETRIES
     return max(0, value)

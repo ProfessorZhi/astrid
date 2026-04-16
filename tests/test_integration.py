@@ -1,4 +1,4 @@
-"""End-to-end integration tests for MiniCode Python.
+"""End-to-end integration tests for Astrid.
 
 Tests the full pipeline: agent loop → model → tool execution → message flow,
 using the MockModelAdapter (no API key needed).
@@ -31,7 +31,7 @@ from astrid.tools import create_default_tool_registry
 from astrid.types import AgentStep, ChatMessage
 from astrid.context_manager import ContextManager
 from astrid.session import SessionData, save_session, load_session, list_sessions
-from astrid.config import load_effective_settings, MINI_CODE_DIR
+from astrid.config import load_effective_settings, ASTRID_DIR
 from astrid.prompt import build_system_prompt
 from astrid.tui.types import TranscriptEntry, _create_transcript_entry, _recycle_transcript_entry
 
@@ -52,7 +52,7 @@ def tmp_workspace(tmp_path: Path) -> Path:
                 return f"Hello, {name}!"
 
             if __name__ == "__main__":
-                print(greet("MiniCode"))
+                print(greet("Astrid"))
         """),
         encoding="utf-8",
     )
@@ -208,7 +208,7 @@ class TestAgentLoopIntegration:
         """Agent receives /edit → calls edit_file tool → file is modified."""
         system_messages.append({
             "role": "user",
-            "content": "/edit hello.txt::Hello, world!::Hello, MiniCode!",
+            "content": "/edit hello.txt::Hello, world!::Hello, Astrid!",
         })
 
         result = run_agent_turn(
@@ -220,7 +220,7 @@ class TestAgentLoopIntegration:
         )
 
         content = (tmp_workspace / "hello.txt").read_text(encoding="utf-8")
-        assert "Hello, MiniCode!" in content
+        assert "Hello, Astrid!" in content
         assert "Hello, world!" not in content
 
     def test_grep_files_via_agent(
@@ -499,7 +499,7 @@ class TestSessionIntegration:
         assert loaded.workspace == str(tmp_workspace)
 
         # Cleanup
-        session_path = MINI_CODE_DIR / "sessions" / "test-integration-001.json"
+        session_path = ASTRID_DIR / "sessions" / "test-integration-001.json"
         if session_path.exists():
             session_path.unlink()
 
@@ -522,7 +522,7 @@ class TestSessionIntegration:
 
         # Cleanup
         for i in range(3):
-            path = MINI_CODE_DIR / "sessions" / f"test-list-{i:03d}.json"
+            path = ASTRID_DIR / "sessions" / f"test-list-{i:03d}.json"
             if path.exists():
                 path.unlink()
 

@@ -1,4 +1,4 @@
-"""Interactive installer for MiniCode Python.
+"""Interactive installer for Astrid.
 
 Configures model, API credentials, and installs launcher script.
 """
@@ -12,8 +12,8 @@ import tempfile
 from pathlib import Path
 
 from astrid.config import (
-    MINI_CODE_DIR,
-    MINI_CODE_SETTINGS_PATH,
+    ASTRID_DIR,
+    ASTRID_SETTINGS_PATH,
     load_effective_settings,
     save_mini_code_settings,
 )
@@ -55,13 +55,13 @@ def _install_launcher_script() -> str | None:
 
     # Determine target bin directory and script based on platform
     if sys.platform == "win32":
-        # Windows: Use ~/.mini-code/bin with .bat script
-        target_bin_dir = MINI_CODE_DIR / "bin"
+        # Windows: Use ~/.astrid/bin with .bat script
+        target_bin_dir = ASTRID_DIR / "bin"
         launcher_path = target_bin_dir / "astrid.bat"
         python_exe = sys.executable.replace("/", "\\")
         launcher_script = "\r\n".join([
             "@echo off",
-            "REM MiniCode Python Launcher for Windows",
+            "REM Astrid Launcher for Windows",
             f'"{python_exe}" -m astrid.main %*',
             "",
         ])
@@ -73,7 +73,7 @@ def _install_launcher_script() -> str | None:
         python_exe = sys.executable
         launcher_script = "\n".join([
             "#!/usr/bin/env bash",
-            "# MiniCode Python Launcher for macOS",
+            "# Astrid Launcher for macOS",
             "# Works with bash, zsh, and other shells",
             "set -euo pipefail",
             f'exec "{python_exe}" -m astrid.main "$@"',
@@ -87,7 +87,7 @@ def _install_launcher_script() -> str | None:
         python_exe = sys.executable
         launcher_script = "\n".join([
             "#!/usr/bin/env bash",
-            "# MiniCode Python Launcher for Linux",
+            "# Astrid Launcher for Linux",
             "set -euo pipefail",
             f'exec "{python_exe}" -m astrid.main "$@"',
             "",
@@ -143,10 +143,10 @@ def _check_path_entry(target_dir: str) -> bool:
 def main() -> None:
     """Run the interactive installer."""
     print("=" * 60)
-    print("  MiniCode Python 安装向导")
+    print("  Astrid 安装向导")
     print("=" * 60)
     print()
-    print(f"配置会写入: {MINI_CODE_SETTINGS_PATH}")
+    print(f"配置会写入: {ASTRID_SETTINGS_PATH}")
     print("配置保存在独立目录中，不会影响其它本地工具配置。")
     print()
     
@@ -197,7 +197,7 @@ def main() -> None:
                 "ANTHROPIC_MODEL": model,
             },
         })
-        print(f"✅ 配置已保存到: {MINI_CODE_SETTINGS_PATH}")
+        print(f"✅ 配置已保存到: {ASTRID_SETTINGS_PATH}")
     except OSError as e:
         print(f"\n❌ 保存配置失败: {e}")
         sys.exit(1)
@@ -248,7 +248,7 @@ def main() -> None:
     print("  安装完成！")
     print("=" * 60)
     print()
-    print("📁 配置文件:", MINI_CODE_SETTINGS_PATH)
+    print("📁 配置文件:", ASTRID_SETTINGS_PATH)
     if launcher_result:
         launcher_path, launcher_command, _ = launcher_result
         print("🚀 启动命令:", launcher_command)
@@ -267,7 +267,7 @@ def main() -> None:
     print("    astrid-py                (如果已添加 PATH)")
     print("    python3 -m astrid.main   (通用方式)")
     print()
-    print("感谢使用 MiniCode Python！🎉")
+    print("感谢使用 Astrid！🎉")
     print()
 
 

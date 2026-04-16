@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from astrid.config import MINI_CODE_DIR
+from astrid.config import ASTRID_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -338,8 +338,8 @@ class ContextManager:
 
 def save_context_state(manager: ContextManager) -> None:
     """Save context manager state to disk."""
-    state_path = MINI_CODE_DIR / "context_state.json"
-    MINI_CODE_DIR.mkdir(parents=True, exist_ok=True)
+    state_path = ASTRID_DIR / "context_state.json"
+    ASTRID_DIR.mkdir(parents=True, exist_ok=True)
     
     state = {
         "model": manager.model,
@@ -353,7 +353,7 @@ def save_context_state(manager: ContextManager) -> None:
 
 def load_context_state() -> ContextManager | None:
     """Load context manager state from disk."""
-    state_path = MINI_CODE_DIR / "context_state.json"
+    state_path = ASTRID_DIR / "context_state.json"
     if not state_path.exists():
         return None
     
@@ -371,6 +371,6 @@ def load_context_state() -> ContextManager | None:
 
 def clear_context_state() -> None:
     """Clear saved context state."""
-    state_path = MINI_CODE_DIR / "context_state.json"
+    state_path = ASTRID_DIR / "context_state.json"
     if state_path.exists():
         state_path.unlink()

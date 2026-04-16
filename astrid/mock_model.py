@@ -110,7 +110,7 @@ class MockModelAdapter:
             type="assistant",
             content="\n".join(
                 [
-                    "This is a minimal MiniCode Python shell.",
+                    "This is a minimal Astrid shell.",
                     "You can try:",
                     "/tools",
                     "/ls",

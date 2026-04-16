@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 print("=" * 70)
-print("  MiniCode Python - Integration Test")
+print("  Astrid - Integration Test")
 print("=" * 70)
 print()
 
@@ -373,13 +373,13 @@ def test_session_persistence():
         create_new_session, save_session, load_session,
         list_sessions, delete_session, AutosaveManager
     )
-    from astrid.config import MINI_CODE_DIR
+    from astrid.config import ASTRID_DIR
     
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         
         with patch("astrid.session.SESSIONS_DIR", tmp_path / "sessions"), \
-             patch("astrid.session.MINI_CODE_DIR", tmp_path):
+             patch("astrid.session.ASTRID_DIR", tmp_path):
             
             # Create session
             session = create_new_session(workspace="/tmp/test")

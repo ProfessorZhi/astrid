@@ -21,7 +21,7 @@
 
 **测试内容**:
 - 配置诊断命令 (`--validate-config`)
-- 日志系统初始化 (`~/.mini-code/astrid.log`)
+- 日志系统初始化 (`~/.astrid/astrid.log`)
 - 核心模块导入（main, logging_config, context_manager, memory）
 
 **成功标准**:

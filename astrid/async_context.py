@@ -1,4 +1,4 @@
-"""Async context collector for MiniCode Python.
+"""Async context collector for Astrid.
 
 Parallelizes expensive I/O operations (git status, CLAUDE.md loading, etc.)
 and caches results with invalidation support.

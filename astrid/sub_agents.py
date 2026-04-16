@@ -1,4 +1,4 @@
-"""Lightweight sub-agent system for MiniCode Python.
+"""Lightweight sub-agent system for Astrid.
 
 Inspired by Claude Code's AgentTool and coordinator/ system.
 Provides specialized agents for different task types:

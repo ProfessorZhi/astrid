@@ -98,7 +98,7 @@ def build_system_prompt(
     project_claude_md = _maybe_read(cwd_path / "CLAUDE.md")
 
     parts = [
-        "You are mini-code, a terminal coding assistant.",
+        "You are Astrid, a terminal coding assistant.",
         "Default behavior: inspect the repository, use tools, make code changes when appropriate, and explain results clearly.",
         "Prefer reading files, searching code, editing files, and running verification commands over giving purely theoretical advice.",
         f"Current cwd: {cwd}",

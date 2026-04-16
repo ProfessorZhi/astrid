@@ -1,4 +1,4 @@
-"""Hooks event system for MiniCode Python.
+"""Hooks event system for Astrid.
 
 Inspired by Claude Code's hooks system (PreToolUse, PostToolUse, Stop, etc.)
 and plugin event listeners.

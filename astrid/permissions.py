@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from astrid.config import MINI_CODE_PERMISSIONS_PATH
+from astrid.config import ASTRID_PERMISSIONS_PATH
 
 # 权限决策类型 — 对齐 TS 版 PermissionDecision
 PermissionDecision = Literal[
@@ -117,10 +117,10 @@ def _classify_dangerous_command(command: str, args: list[str]) -> str | None:
 
 
 def _read_permission_store() -> dict[str, Any]:
-    if not MINI_CODE_PERMISSIONS_PATH.exists():
+    if not ASTRID_PERMISSIONS_PATH.exists():
         return {}
     try:
-        data = json.loads(MINI_CODE_PERMISSIONS_PATH.read_text(encoding="utf-8"))
+        data = json.loads(ASTRID_PERMISSIONS_PATH.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             return {}
         return data
@@ -135,11 +135,11 @@ def _write_permission_store(store: dict[str, Any]) -> None:
     """使用原子写入持久化权限存储，防止竞争条件"""
     import tempfile
     
-    MINI_CODE_PERMISSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ASTRID_PERMISSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
     
     # 写入临时文件
     fd, tmp_path = tempfile.mkstemp(
-        dir=MINI_CODE_PERMISSIONS_PATH.parent,
+        dir=ASTRID_PERMISSIONS_PATH.parent,
         suffix=".tmp"
     )
     try:
@@ -147,7 +147,7 @@ def _write_permission_store(store: dict[str, Any]) -> None:
             json.dump(store, f, indent=2)
             f.write('\n')
         # 原子替换
-        os.replace(tmp_path, MINI_CODE_PERMISSIONS_PATH)
+        os.replace(tmp_path, ASTRID_PERMISSIONS_PATH)
     except Exception:
         # 清理临时文件
         try:
@@ -236,7 +236,7 @@ class PermissionManager:
         result = self.prompt(
             {
                 "kind": "path",
-                "summary": f"mini-code wants {intent.replace('_', ' ')} access outside the current cwd",
+                "summary": f"astrid wants {intent.replace('_', ' ')} access outside the current cwd",
                 "details": [
                     f"cwd: {self.workspace_root}",
                     f"target: {normalized_target}",
@@ -286,9 +286,9 @@ class PermissionManager:
             raise RuntimeError(f"Command requires approval: {signature}. Start astrid in TTY mode to approve it.")
         # Distinguish forced prompts (external trigger) from dangerous commands
         summary = (
-            "mini-code wants to run a dangerous command"
+            "astrid wants to run a dangerous command"
             if not force_prompt_reason
-            else "mini-code wants approval for this command"
+            else "astrid wants approval for this command"
         )
         result = self.prompt(
             {
@@ -338,7 +338,7 @@ class PermissionManager:
         result = self.prompt(
             {
                 "kind": "edit",
-                "summary": "mini-code wants to apply a file modification",
+                "summary": "astrid wants to apply a file modification",
                 "details": [f"target: {normalized_target}", "", diff_preview],
                 "scope": normalized_target,
                 "choices": [

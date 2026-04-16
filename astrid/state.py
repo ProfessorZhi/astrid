@@ -1,4 +1,4 @@
-"""Zustand-style state management for MiniCode Python.
+"""Zustand-style state management for Astrid.
 
 Provides a simple, predictable state container with:
 - Immutable updates via updater functions

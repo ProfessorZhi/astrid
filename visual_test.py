@@ -82,7 +82,7 @@ cmds = [
     FakeCmd("/help", "Show available commands"),
     FakeCmd("/clear", "Clear the current session"),
     FakeCmd("/save", "Save transcript to file"),
-    FakeCmd("/exit", "Exit MiniCode"),
+    FakeCmd("/exit", "Exit Astrid"),
 ]
 menu = render_slash_menu(cmds, 1)
 print(menu)
