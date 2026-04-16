@@ -1,6 +1,6 @@
 <div align="center">
 
-# Astrid Python / Astrid Python 中文版
+# Astrid / Astrid 中文版
 
 ### 🌏 Bilingual Terminal AI Coding Assistant / 双语终端 AI 编程助手
 
@@ -31,8 +31,8 @@
 ### 安装
 
 ```bash
-git clone https://github.com/ProfessorZhi/Astrid-Python.git
-cd Astrid-Python
+git clone https://github.com/ProfessorZhi/astrid.git
+cd astrid
 
 # 交互式安装（推荐）
 python -m astrid.main --install
@@ -107,7 +107,7 @@ astrid-py
 |------|------|------|
 | **主仓库** | [LiuMengxuan04/Astrid](https://github.com/LiuMengxuan04/Astrid) | TypeScript 原版，项目主入口 |
 | **Rust 版** | [harkerhand/Astrid-rs](https://github.com/harkerhand/Astrid-rs) | Rust 高性能实现 |
-| **Python 版** | 本仓库 | 零依赖 Python 实现 |
+| **Python 实现** | 本仓库 | 零依赖 Python 实现 |
 
 ---
 
@@ -181,8 +181,8 @@ astrid-py
 
 ```bash
 # 克隆仓库
-git clone https://github.com/ProfessorZhi/Astrid-Python.git
-cd Astrid-Python
+git clone https://github.com/ProfessorZhi/astrid.git
+cd astrid
 
 # 运行测试
 pip install -e ".[dev]"
@@ -212,7 +212,7 @@ MINI_CODE_MODEL_MODE=mock python -m astrid.main
 
 ## ⚡ Performance Highlights
 
-After **8 rounds of systematic optimization** (93+ optimizations), Astrid Python achieves **production-grade performance**:
+After **8 rounds of systematic optimization** (93+ optimizations), astrid achieves **production-grade performance**:
 
 | Metric | Before | After | **Improvement** |
 |--------|--------|-------|-----------------|
@@ -230,8 +230,8 @@ After **8 rounds of systematic optimization** (93+ optimizations), Astrid Python
 ### Installation
 
 ```bash
-git clone https://github.com/ProfessorZhi/Astrid-Python.git
-cd Astrid-Python
+git clone https://github.com/ProfessorZhi/astrid.git
+cd astrid
 
 # Interactive installer (recommended)
 python -m astrid.main --install
@@ -291,7 +291,7 @@ astrid-py
 |---------|-----------|-------------|
 | **Main repo** | [LiuMengxuan04/Astrid](https://github.com/LiuMengxuan04/Astrid) | TypeScript original, project entry point |
 | **Rust version** | [harkerhand/Astrid-rs](https://github.com/harkerhand/Astrid-rs) | High-performance Rust implementation |
-| **Python version** | This repo | Zero-dependency Python implementation |
+| **Python implementation** | This repo | Zero-dependency Python implementation |
 
 ---
 
@@ -416,8 +416,8 @@ astrid-py
 
 ```bash
 # Clone
-git clone https://github.com/ProfessorZhi/Astrid-Python.git
-cd Astrid-Python
+git clone https://github.com/ProfessorZhi/astrid.git
+cd astrid
 
 # Run tests
 pip install -e ".[dev]"
@@ -450,7 +450,7 @@ MINI_CODE_MODEL_MODE=mock python -m astrid.main
 ### 🔗 Related Projects
 
 - **[Astrid (TypeScript)](https://github.com/LiuMengxuan04/Astrid)** — 主仓库 / Main repository (TypeScript)
-- **[Astrid-Python](https://github.com/ProfessorZhi/Astrid-Python)** — Python 版本 / Python version
+- **[astrid](https://github.com/ProfessorZhi/astrid)** — Python 实现本 / Python implementation
 - **[Astrid-rs (Rust)](https://github.com/harkerhand/Astrid-rs/tree/main)** — Rust 版本 / Rust version
 
 ---
