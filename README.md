@@ -101,16 +101,6 @@ astrid-py
 
 ---
 
-## 🔗 相关项目
-
-| 版本 | 仓库 | 说明 |
-|------|------|------|
-| **主仓库** | [LiuMengxuan04/Astrid](https://github.com/LiuMengxuan04/Astrid) | TypeScript 原版，项目主入口 |
-| **Rust 版** | [harkerhand/Astrid-rs](https://github.com/harkerhand/Astrid-rs) | Rust 高性能实现 |
-| **Python 实现** | 本仓库 | 零依赖 Python 实现 |
-
----
-
 ## 🎯 核心特性
 
 - **🖥️ 丰富的终端 UI** — 备用屏幕 TUI，面板、ANSI 样式、平滑滚动
@@ -285,16 +275,6 @@ astrid-py
 
 ---
 
-## 🔗 Related Projects
-
-| Version | Repository | Description |
-|---------|-----------|-------------|
-| **Main repo** | [LiuMengxuan04/Astrid](https://github.com/LiuMengxuan04/Astrid) | TypeScript original, project entry point |
-| **Rust version** | [harkerhand/Astrid-rs](https://github.com/harkerhand/Astrid-rs) | High-performance Rust implementation |
-| **Python implementation** | This repo | Zero-dependency Python implementation |
-
----
-
 ## 🎯 Core Features
 
 - **🖥️ Rich Terminal UI** — Alternate-screen TUI with panels, ANSI styling, smooth scrolling
@@ -438,20 +418,6 @@ ASTRID_MODEL_MODE=mock python -m astrid.main
 | Optimizations | **93+** |
 | Test pass rate | **98.9%** |
 | Code readability | **9/10** |
-
----
-
-## 🙏 Acknowledgments
-
-- **[@LiuMengxuan04](https://github.com/LiuMengxuan04)** — Creator of [Astrid](https://github.com/LiuMengxuan04/Astrid) (TypeScript original)
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Design inspiration
-- **All Contributors** — Everyone who contributed to Astrid
-
-### 🔗 Related Projects
-
-- **[Astrid (TypeScript)](https://github.com/LiuMengxuan04/Astrid)** — 主仓库 / Main repository (TypeScript)
-- **[astrid](https://github.com/ProfessorZhi/astrid)** — Python 实现本 / Python implementation
-- **[Astrid-rs (Rust)](https://github.com/harkerhand/Astrid-rs/tree/main)** — Rust 版本 / Rust version
 
 ---
 

@@ -1,8 +1,7 @@
-# Astrid Python - 进度报告与差距分析
+# Astrid - 进度报告与差距分析
 
 > 生成时间: 2026-04-05
 > 最后更新: 2026-04-05 (会话持久化与 TUI 完整实现)
-> 参照: [Astrid TS 主仓库](https://github.com/LiuMengxuan04/Astrid)
 
 ---
 
