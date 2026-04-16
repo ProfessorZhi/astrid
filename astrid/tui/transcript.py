@@ -87,7 +87,8 @@ def _render_transcript_entry(entry: TranscriptEntry) -> str:
         )
         can_toggle = collapsible_by_lines or collapsible_by_chars
 
-        is_collapsed = entry.collapsed or entry.collapsePhase is not None
+        is_collapsed = entry.collapsed
+        is_collapsing = entry.collapsePhase is not None and not entry.collapsed
 
         if can_toggle:
             toggle_text = (
@@ -105,6 +106,9 @@ def _render_transcript_entry(entry: TranscriptEntry) -> str:
 
         if entry.status == "running":
             body = entry.body
+        elif is_collapsing:
+            phase_label = f"collapsing{'.' * min(int(entry.collapsePhase or 1), 3)}"
+            body = f"{t.subtle}{t.italic}{phase_label}{t.reset}"
         elif is_collapsed:
             summary = entry.collapsedSummary or "output collapsed"
             body = f"{t.subtle}{t.italic}{summary}{t.reset}"

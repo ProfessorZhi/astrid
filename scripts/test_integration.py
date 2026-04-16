@@ -5,8 +5,12 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure we can import astrid
-sys.path.insert(0, str(Path(__file__).parent))
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+# Ensure we can import astrid from the repository root
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 print("=" * 70)
 print("  Astrid - Integration Test")

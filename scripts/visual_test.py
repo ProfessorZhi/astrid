@@ -1,6 +1,12 @@
 """Visual test — render each TUI component to verify the enhanced aesthetics."""
 import sys
-sys.path.insert(0, ".")
+from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from astrid.tui.chrome import (
     render_banner, render_footer_bar, render_panel, render_slash_menu,

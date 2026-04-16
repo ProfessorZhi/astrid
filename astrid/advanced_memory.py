@@ -1048,9 +1048,15 @@ class AdvancedMemoryManager:
 # 系统集成
 # ---------------------------------------------------------------------------
 
-def create_memory_integration() -> AdvancedMemoryManager:
-    """创建记忆管理器集成"""
-    return AdvancedMemoryManager()
+def create_memory_integration(
+    workspace: str | Path | None = None,
+) -> AdvancedMemoryManager:
+    """创建记忆管理器集成。
+
+    保留 ``workspace`` 参数兼容性，方便测试和需要隔离存储的调用方
+    指定独立工作目录。
+    """
+    return AdvancedMemoryManager(workspace=workspace)
 
 def inject_advanced_memory_context(
     system_prompt: str,

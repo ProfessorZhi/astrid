@@ -65,7 +65,6 @@ def test_performance_analyzer():
         assert isinstance(optimization_plan, dict)
         
         print("✅ 性能分析器测试通过\n")
-        return True
 
 
 def test_skill_generator():
@@ -100,7 +99,6 @@ def test_skill_generator():
                 assert isinstance(skill_def.capabilities, list)
         
         print(f"✅ 技能生成器测试通过，生成 {len(generated_skills)} 个技能\n")
-        return True
 
 
 def test_knowledge_expander():
@@ -144,7 +142,6 @@ def test_knowledge_expander():
         assert "memories_added" in integration_result
         
         print("✅ 知识扩展器测试通过\n")
-        return True
 
 
 def test_meta_learning_coordinator():
@@ -192,7 +189,6 @@ def test_meta_learning_coordinator():
             print(f"  策略: {name} (优先级: {strategy.get('priority', 0)})")
         
         print("✅ 元学习协调器测试通过\n")
-        return True
 
 
 def test_bootstrap_system_integration():
@@ -245,7 +241,6 @@ def test_bootstrap_system_integration():
         assert len(bootstrap_system.bootstrap_records) > 0, "应该有自举记录"
         
         print("✅ 自举系统集成测试通过\n")
-        return True
 
 
 def test_bootstrap_persistence():
@@ -285,7 +280,6 @@ def test_bootstrap_persistence():
             assert latest_record.timestamp > 0, "记录必须有时间戳"
         
         print("✅ 自举系统持久化测试通过\n")
-        return True
 
 
 def test_comprehensive_bootstrap_workflow():
@@ -341,7 +335,6 @@ def test_comprehensive_bootstrap_workflow():
         assert successful > 0, "至少应该有一些成功的周期"
         
         print("✅ 完整自举工作流测试通过\n")
-        return True
 
 
 def main():
@@ -361,7 +354,8 @@ def main():
     results = []
     for test_name, test_func in tests:
         try:
-            success = test_func()
+            test_func()
+            success = True
             results.append((test_name, success))
         except Exception as e:
             print(f"❌ {test_name} 测试失败: {e}")

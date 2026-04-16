@@ -92,7 +92,7 @@ Python 版 Astrid 现在已经**基本完成**，所有核心功能和 TUI 交�
 |------|---------|
 | `astrid/main.py` | 添加 `--resume`、`--list-sessions`、`--session` CLI 参数 |
 | `astrid/tty_app.py` | 集成会话管理、自动保存、会话恢复逻辑 |
-| `PROGRESS_REPORT.md` | 更新进度从 70% 到 95% |
+| `docs/reports/PROGRESS_REPORT.md` | 更新进度从 70% 到 95% |
 
 ---
 

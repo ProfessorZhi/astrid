@@ -6,7 +6,13 @@ This tests the core input parsing without needing an actual terminal.
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from astrid.tui.input_parser import parse_input_chunk
 from astrid.tui.input import render_input_prompt

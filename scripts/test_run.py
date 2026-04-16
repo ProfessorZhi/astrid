@@ -4,11 +4,15 @@ import os
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # Set mock mode before importing
 os.environ["ASTRID_MODEL_MODE"] = "mock"
 
-# Add project to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add repository root to path
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from astrid.config import load_runtime_config
 from astrid.permissions import PermissionManager
