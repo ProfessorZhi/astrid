@@ -35,3 +35,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+
+# Learning materials (not for public sharing)
+learning/
