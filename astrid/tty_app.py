@@ -754,8 +754,12 @@ def _render_screen_simple(args: TtyAppArgs, state: ScreenState) -> None:
     # Simple header: just workspace info
     buf.append(f"{SUBTLE}Workspace{RESET}\n")
     buf.append(f"{SUBTLE}──{'─' * 60}{RESET}\n")
-    buf.append(f" project {args.workspace_name or 'main'}")
-    buf.append(f"  model {args.model or 'unknown'}")
+    # Extract basename from cwd for display
+    import os
+    cwd_name = os.path.basename(args.cwd) or args.cwd
+    buf.append(f" project {cwd_name}")
+    model_name = getattr(args.model, '__class__', None).__name__ if args.model else 'unknown'
+    buf.append(f"  model {model_name}")
     if state.session:
         msg_count = len(args.messages)
         buf.append(f"  msgs {msg_count}")
