@@ -139,6 +139,58 @@ def get_transcript_window_size(window_size: int | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Simple rendering (Claude Code style - no panels)
+# ---------------------------------------------------------------------------
+
+def render_transcript_simple(entries: list[TranscriptEntry]) -> str:
+    """Render transcript in simple style like Claude Code - no panels, no borders.
+
+    Each entry is rendered with a label prefix and a blank line separator.
+    """
+    if not entries:
+        return ""
+
+    t = theme()
+    parts: list[str] = []
+
+    for i, entry in enumerate(entries):
+        if i > 0:
+            parts.append("")  # Blank line between entries
+
+        if entry.kind == "user":
+            parts.append(f"{t.user}{t.bold}▌ you{t.reset}")
+            if entry.body:
+                parts.append(_indent_block(entry.body))
+
+        elif entry.kind == "assistant":
+            parts.append(f"{t.assistant}{t.bold}▌ assistant{t.reset}")
+            if entry.body:
+                parts.append(_indent_block(render_markdownish(entry.body)))
+
+        elif entry.kind == "progress":
+            parts.append(f"{t.progress}{t.bold}▌ progress{t.reset}")
+            if entry.body:
+                parts.append(_indent_block(render_markdownish(entry.body)))
+
+        elif entry.kind == "tool":
+            # Tool status
+            if entry.status == "running":
+                status_label = f"{t.tool}{ICON_DOT} running{t.reset}"
+            elif entry.status == "success":
+                status_label = f"{t.assistant}ok{t.reset}"
+            else:
+                status_label = f"{t.tool_error}err{t.reset}"
+
+            tool_name_display = f"{t.tool}{t.bold}{entry.toolName}{t.reset}"
+            parts.append(f"{t.tool}{t.bold}▌ tool{t.reset} {tool_name_display} {status_label}")
+
+            if entry.body:
+                parts.append(_indent_block(entry.body))
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Per-entry rendering cache
 # ---------------------------------------------------------------------------
 

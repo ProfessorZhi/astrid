@@ -80,6 +80,7 @@ from astrid.tui.transcript import (
     get_transcript_max_scroll_offset,
     get_transcript_window_size,
     render_transcript,
+    render_transcript_simple,
 )
 from astrid.tui.types import TranscriptEntry
 from astrid.types import ChatMessage, ModelAdapter
@@ -734,6 +735,49 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
     contextual_help = _get_contextual_help(state, args)
     if contextual_help:
         buf.append(f"\n{SUBTLE}{contextual_help}{RESET}")
+
+    sys.stdout.write("".join(buf))
+    sys.stdout.flush()
+
+
+def _render_screen_simple(args: TtyAppArgs, state: ScreenState) -> None:
+    """Simple screen rendering like Claude Code - no panels, direct terminal output.
+
+    This is a cleaner UI that outputs messages directly without panel borders,
+    similar to how Claude Code works natively in the terminal.
+    """
+    buf: list[str] = []
+
+    # CSI H + CSI J  (cursor home + erase to end)
+    buf.append("\x1b[H\x1b[J")
+
+    # Simple header: just workspace info
+    buf.append(f"{SUBTLE}Workspace{RESET}\n")
+    buf.append(f"{SUBTLE}──{'─' * 60}{RESET}\n")
+    buf.append(f" project {args.workspace_name or 'main'}")
+    buf.append(f"  model {args.model or 'unknown'}")
+    if state.session:
+        msg_count = len(args.messages)
+        buf.append(f"  msgs {msg_count}")
+    buf.append("\n\n")
+
+    # Transcript in simple format
+    transcript_snapshot = list(state.transcript)
+    if transcript_snapshot:
+        transcript_body = render_transcript_simple(transcript_snapshot)
+        buf.append(transcript_body)
+        buf.append("\n\n")
+
+    # Simple prompt
+    compact = _is_compact_terminal()
+    commands = _get_visible_commands(state.input)
+    prompt_body = render_input_prompt(state.input, state.cursor_offset, compact=compact)
+    if commands:
+        prompt_body += "\n" + render_slash_menu(
+            commands,
+            min(state.selected_slash_index, len(commands) - 1),
+        )
+    buf.append(prompt_body)
 
     sys.stdout.write("".join(buf))
     sys.stdout.flush()
@@ -1419,7 +1463,7 @@ def run_tty_app(
     permissions.prompt = _permission_prompt_handler
 
     # Throttled renderer: coalesces rapid rerender() calls to reduce flickering
-    throttled = _ThrottledRenderer(lambda: _render_screen(args, state), min_interval=0.016)
+    throttled = _ThrottledRenderer(lambda: _render_screen_simple(args, state), min_interval=0.016)
 
     def rerender() -> None:
         throttled.request()
@@ -1456,7 +1500,7 @@ def run_tty_app(
             _prev_sigwinch = None
 
     try:
-        _render_screen(args, state)
+        _render_screen_simple(args, state)
 
         with _RawModeContext():
             while not should_exit:
