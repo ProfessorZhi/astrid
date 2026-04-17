@@ -36,5 +36,8 @@ Thumbs.db
 *.tmp
 *.bak
 
+# Local AI collaboration artifacts
+.superpowers/
+
 # Learning materials (not for public sharing)
 learning/
