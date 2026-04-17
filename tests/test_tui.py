@@ -76,6 +76,7 @@ def test_render_transcript_shows_orchestration_block() -> None:
             kind="orchestration",
             body="",
             narrativeLine="Spawning workers for search and review...",
+            phaseLabel="dispatching",
             workers=[
                 OrchestrationWorker(
                     name="Atlas",
@@ -98,6 +99,7 @@ def test_render_transcript_shows_orchestration_block() -> None:
 
     rendered = render_transcript(transcript, scroll_offset=0)
 
+    assert "dispatching" in rendered
     assert "Spawning workers for search and review..." in rendered
     assert "Atlas" in rendered
     assert "context scout" in rendered
@@ -115,6 +117,7 @@ def test_render_transcript_collapses_archived_workers_into_summary() -> None:
             kind="orchestration",
             body="",
             narrativeLine="Merging worker output...",
+            phaseLabel="merging",
             workers=[
                 OrchestrationWorker(
                     name="Russell",

@@ -25,6 +25,7 @@ class TranscriptEntry:
     collapsedSummary: str | None = None
     collapsePhase: Literal[1, 2, 3] | None = None
     narrativeLine: str | None = None
+    phaseLabel: str | None = None
     workers: list[OrchestrationWorker] = field(default_factory=list)
 
 
@@ -44,6 +45,7 @@ def _create_transcript_entry(
     collapsedSummary: str | None = None,
     collapsePhase: Literal[1, 2, 3] | None = None,
     narrativeLine: str | None = None,
+    phaseLabel: str | None = None,
     workers: list[OrchestrationWorker] | None = None,
 ) -> TranscriptEntry:
     """创建 TranscriptEntry，使用对象池减少 GC 压力"""
@@ -58,6 +60,7 @@ def _create_transcript_entry(
         entry.collapsedSummary = collapsedSummary
         entry.collapsePhase = collapsePhase
         entry.narrativeLine = narrativeLine
+        entry.phaseLabel = phaseLabel
         entry.workers = list(workers or [])
         return entry
     else:
@@ -71,6 +74,7 @@ def _create_transcript_entry(
             collapsedSummary=collapsedSummary,
             collapsePhase=collapsePhase,
             narrativeLine=narrativeLine,
+            phaseLabel=phaseLabel,
             workers=list(workers or []),
         )
 
@@ -79,5 +83,6 @@ def _recycle_transcript_entry(entry: TranscriptEntry) -> None:
     """回收 TranscriptEntry 到对象池"""
     if len(_entry_pool) < _POOL_MAX_SIZE:
         entry.narrativeLine = None
+        entry.phaseLabel = None
         entry.workers = []
         _entry_pool.append(entry)

@@ -39,6 +39,7 @@ from astrid.orchestration import (
     WorkerRuntimeState,
     archive_worker,
     create_runtime,
+    get_phase_label,
     mark_review_required,
     mark_worker_reported,
     request_spawn,
@@ -348,6 +349,7 @@ def _sync_orchestration_entry(state: ScreenState) -> None:
             kind="orchestration",
             body=runtime.narrative,
             narrativeLine=runtime.narrative,
+            phaseLabel=get_phase_label(runtime.task_state),
             workers=workers,
         )
         return
@@ -360,6 +362,7 @@ def _sync_orchestration_entry(state: ScreenState) -> None:
 
     entry.body = runtime.narrative
     entry.narrativeLine = runtime.narrative
+    entry.phaseLabel = get_phase_label(runtime.task_state)
     entry.workers = workers
 
 

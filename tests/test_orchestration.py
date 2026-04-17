@@ -4,6 +4,7 @@ from astrid.orchestration import (
     WorkerRuntimeState,
     archive_worker,
     create_runtime,
+    get_phase_label,
     mark_review_required,
     mark_worker_reported,
     request_spawn,
@@ -53,3 +54,10 @@ def test_archive_worker_moves_runtime_to_done_when_all_workers_are_archived() ->
 
     assert runtime.workers[worker.id].state == WorkerRuntimeState.ARCHIVED
     assert runtime.task_state == TaskRuntimeState.DONE
+
+
+def test_get_phase_label_maps_runtime_states_to_short_ui_labels() -> None:
+    assert get_phase_label(TaskRuntimeState.PLANNING) == "unravelling"
+    assert get_phase_label(TaskRuntimeState.SPAWNING) == "dispatching"
+    assert get_phase_label(TaskRuntimeState.REVIEWING) == "reviewing"
+    assert get_phase_label(TaskRuntimeState.DONE) == "standing by"

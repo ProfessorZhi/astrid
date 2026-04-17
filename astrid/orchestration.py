@@ -41,6 +41,19 @@ class WorkerRole(str, Enum):
     REVIEW_AGENT = "review agent"
 
 
+_PHASE_LABELS: dict[TaskRuntimeState, str] = {
+    TaskRuntimeState.IDLE: "standing by",
+    TaskRuntimeState.PLANNING: "unravelling",
+    TaskRuntimeState.SPAWNING: "dispatching",
+    TaskRuntimeState.RUNNING: "running",
+    TaskRuntimeState.COLLECTING: "gathering",
+    TaskRuntimeState.REVIEWING: "reviewing",
+    TaskRuntimeState.MERGING: "merging",
+    TaskRuntimeState.DONE: "standing by",
+    TaskRuntimeState.FAILED: "blocked",
+}
+
+
 _WORKER_IDS = itertools.count(1)
 
 
@@ -143,6 +156,12 @@ def archive_worker(runtime: OrchestratorState, worker_id: str) -> None:
         runtime.narrative = "All workers archived."
 
 
+def get_phase_label(task_state: TaskRuntimeState) -> str:
+    """Return the short lowercase label used by the TUI header line."""
+
+    return _PHASE_LABELS.get(task_state, "coordinating")
+
+
 __all__ = [
     "OrchestratorState",
     "TaskRuntimeState",
@@ -151,6 +170,7 @@ __all__ = [
     "WorkerRuntimeState",
     "archive_worker",
     "create_runtime",
+    "get_phase_label",
     "mark_review_required",
     "mark_worker_reported",
     "request_spawn",

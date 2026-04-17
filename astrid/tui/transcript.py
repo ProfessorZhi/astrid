@@ -78,7 +78,8 @@ def render_orchestration_block(entry: TranscriptEntry) -> str:
     """Render the narrative line and worker tree for orchestration events."""
     t = theme()
     narrative = entry.narrativeLine or entry.body or "Coordinating workers..."
-    lines = [f"{t.accent}{t.bold}unravelling{t.reset}  {render_markdownish(narrative)}"]
+    phase_label = entry.phaseLabel or "unravelling"
+    lines = [f"{t.accent}{t.bold}{phase_label}{t.reset}  {render_markdownish(narrative)}"]
     active_workers = [worker for worker in entry.workers if worker.status != "done"]
     archived_workers = [worker for worker in entry.workers if worker.status == "done"]
 
@@ -259,6 +260,7 @@ def _entry_state(entry: TranscriptEntry) -> tuple:
         entry.collapsedSummary,
         entry.toolName,
         entry.narrativeLine,
+        entry.phaseLabel,
         tuple(
             (
                 worker.name,
