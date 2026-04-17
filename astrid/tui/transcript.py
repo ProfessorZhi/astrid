@@ -4,10 +4,11 @@ from .chrome import (
     _cached_terminal_size,
     RESET, DIM, BOLD,
     ICON_DIVIDER, ICON_DOT,
+    get_worker_accent,
 )
 from .markdown import render_markdownish
 from .theme import theme
-from .types import TranscriptEntry
+from .types import OrchestrationWorker, TranscriptEntry
 
 # Pre-build the separator string once (immutable)
 _SEPARATOR = f"  {DIM}{ICON_DOT} {ICON_DIVIDER * 3} {ICON_DOT}{RESET}"
@@ -42,6 +43,56 @@ def preview_tool_body(tool_name: str, body: str) -> str:
     return limited
 
 
+def _render_worker_status(status: str) -> str:
+    t = theme()
+    if status == "running":
+        return f"{t.progress}running{t.reset}"
+    if status == "queued":
+        return f"{t.subtle}queued{t.reset}"
+    if status == "reporting":
+        return f"{t.assistant}reporting{t.reset}"
+    if status == "blocked":
+        return f"{t.tool_error}blocked{t.reset}"
+    if status == "done":
+        return f"{t.assistant}done{t.reset}"
+    if status == "failed":
+        return f"{t.tool_error}failed{t.reset}"
+    return f"{t.subtle}{status}{t.reset}"
+
+
+def _render_orchestration_worker(worker: OrchestrationWorker, index: int) -> str:
+    t = theme()
+    accent = get_worker_accent(worker.colorKey, index=index)
+    worker_name = f"{accent}{t.bold}{worker.name}{t.reset}"
+    role = f"{t.subtle}{worker.role}{t.reset}"
+    mission = f"{t.subtle}{worker.mission}{t.reset}"
+    status = _render_worker_status(worker.status)
+    first_line = f"{accent}{ICON_DIVIDER}{t.reset} {worker_name}  {role}  {mission}  {status}"
+    if worker.latestEvent:
+        event_line = f"  {t.subtle}{worker.latestEvent}{t.reset}"
+        return f"{first_line}\n{event_line}"
+    return first_line
+
+
+def render_orchestration_block(entry: TranscriptEntry) -> str:
+    """Render the narrative line and worker tree for orchestration events."""
+    t = theme()
+    narrative = entry.narrativeLine or entry.body or "Coordinating workers..."
+    lines = [f"{t.accent}{t.bold}unravelling{t.reset}  {render_markdownish(narrative)}"]
+    active_workers = [worker for worker in entry.workers if worker.status != "done"]
+    archived_workers = [worker for worker in entry.workers if worker.status == "done"]
+
+    for index, worker in enumerate(active_workers):
+        lines.append(_render_orchestration_worker(worker, index))
+    if archived_workers:
+        names = ", ".join(worker.name for worker in archived_workers[:3])
+        more = len(archived_workers) - 3
+        if more > 0:
+            names = f"{names}, +{more} more"
+        lines.append(f"{t.subtle}  {len(archived_workers)} archived worker(s): {names}{t.reset}")
+    return "\n".join(lines)
+
+
 def _render_transcript_entry(entry: TranscriptEntry) -> str:
     """Render a single TranscriptEntry with Morandi theme colors.
 
@@ -65,6 +116,10 @@ def _render_transcript_entry(entry: TranscriptEntry) -> str:
     if entry.kind == "progress":
         label = f"{t.progress}{t.bold}▌ progress{t.reset}"
         return f"{label}\n{_indent_block(render_markdownish(entry.body))}"
+
+    if entry.kind == "orchestration":
+        label = f"{t.accent2}{t.bold}◈ orchestration{t.reset}"
+        return f"{label}\n{_indent_block(render_orchestration_block(entry))}"
 
     if entry.kind == "tool":
         # Status indicator
@@ -172,6 +227,10 @@ def render_transcript_simple(entries: list[TranscriptEntry]) -> str:
             if entry.body:
                 parts.append(_indent_block(render_markdownish(entry.body)))
 
+        elif entry.kind == "orchestration":
+            parts.append(f"{t.accent2}{t.bold}◈ orchestration{t.reset}")
+            parts.append(_indent_block(render_orchestration_block(entry)))
+
         elif entry.kind == "tool":
             # Tool status
             if entry.status == "running":
@@ -190,6 +249,30 @@ def render_transcript_simple(entries: list[TranscriptEntry]) -> str:
     return "\n".join(parts)
 
 
+def _entry_state(entry: TranscriptEntry) -> tuple:
+    return (
+        entry.kind,
+        entry.body,
+        entry.status,
+        entry.collapsed,
+        entry.collapsePhase,
+        entry.collapsedSummary,
+        entry.toolName,
+        entry.narrativeLine,
+        tuple(
+            (
+                worker.name,
+                worker.role,
+                worker.mission,
+                worker.status,
+                worker.colorKey,
+                worker.latestEvent,
+            )
+            for worker in entry.workers
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Per-entry rendering cache
 # ---------------------------------------------------------------------------
@@ -199,15 +282,7 @@ _CACHE_MAX_SIZE = 500
 
 
 def _get_entry_lines(entry: TranscriptEntry) -> list[str]:
-    state = (
-        entry.kind,
-        entry.body,
-        entry.status,
-        entry.collapsed,
-        entry.collapsePhase,
-        entry.collapsedSummary,
-        entry.toolName,
-    )
+    state = _entry_state(entry)
 
     entry_id = id(entry)
     cached = _entry_cache.get(entry_id)
@@ -233,15 +308,7 @@ _line_count_cache: dict[int, tuple[tuple, int]] = {}
 
 
 def _get_entry_line_count(entry: TranscriptEntry) -> int:
-    state = (
-        entry.kind,
-        entry.body,
-        entry.status,
-        entry.collapsed,
-        entry.collapsePhase,
-        entry.collapsedSummary,
-        entry.toolName,
-    )
+    state = _entry_state(entry)
     entry_id = id(entry)
 
     cached_lc = _line_count_cache.get(entry_id)
@@ -381,6 +448,7 @@ def format_transcript_text(entries: list[TranscriptEntry]) -> str:
         if entry.kind == "tool":
             status_text = f" ({entry.status})" if entry.status else ""
             label = f"{entry.toolName or 'tool'}{status_text}"
-        indented = "\n".join("  " + line for line in entry.body.splitlines())
+        body = render_orchestration_block(entry) if entry.kind == "orchestration" else entry.body
+        indented = "\n".join("  " + line for line in body.splitlines())
         parts.append(f"{label}\n{indented}")
     return "\n\n---\n\n".join(parts)

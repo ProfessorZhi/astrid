@@ -1,14 +1,22 @@
 from astrid.tty_app import (
+    TtyAppArgs,
+    ScreenState,
     _apply_tool_result_visual_state,
     _format_history,
+    _handle_input,
     _mark_unfinished_tools,
     _save_transcript,
     summarize_tool_input,
     summarize_tool_output,
 )
+from astrid.mock_model import MockModelAdapter
 from astrid.permissions import PermissionManager
+from astrid.prompt import build_system_prompt
+from astrid.tools import create_default_tool_registry
 from astrid.tui.transcript import format_transcript_text
 from astrid.tui.types import TranscriptEntry
+from pathlib import Path
+import time
 
 
 def test_summarize_tool_output_prefers_first_meaningful_line() -> None:
@@ -105,3 +113,58 @@ def test_success_tool_entry_collapses_to_summary() -> None:
     assert entry.collapsed is True
     assert entry.collapsedSummary == "FILE: README.md"
     assert entry.collapsePhase == 3
+
+
+def test_handle_input_runs_multi_agent_flow_and_records_summary() -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    messages = [
+        {
+            "role": "system",
+            "content": build_system_prompt(
+                cwd,
+                permissions.get_summary(),
+                {
+                    "skills": tools.get_skills(),
+                    "mcpServers": tools.get_mcp_servers(),
+                },
+            ),
+        }
+    ]
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=messages,
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[])
+
+    should_exit = _handle_input(
+        args,
+        state,
+        lambda: None,
+        submitted_raw_input="Please do a multi-agent review and implementation pass for Astrid TUI, split search and implementation, then review the result.",
+    )
+
+    assert should_exit is False
+
+    for _ in range(200):
+        result = state.agent_result or {}
+        if result.get("done"):
+            break
+        time.sleep(0.01)
+    else:
+        raise AssertionError("multi-agent background run did not finish")
+
+    assert state.orchestration is not None
+    assert state.orchestration.task_state.value == "done"
+    assert len(state.orchestration.workers) == 3
+    assert [worker.name for worker in state.orchestration.workers.values()] == ["Russell", "Knuth", "Hegel"]
+    assert any(entry.kind == "orchestration" for entry in state.transcript)
+    assert any(
+        entry.kind == "assistant" and entry.body.startswith("Multi-agent summary")
+        for entry in state.transcript
+    )

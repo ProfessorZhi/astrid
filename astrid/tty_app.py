@@ -32,8 +32,20 @@ from astrid.cli_commands import (
 from astrid.cost_tracker import CostTracker
 from astrid.history import load_history_entries, save_history_entries
 from astrid.local_tool_shortcuts import parse_local_tool_shortcut
+from astrid.orchestration import (
+    OrchestratorState,
+    TaskRuntimeState,
+    WorkerRole,
+    WorkerRuntimeState,
+    archive_worker,
+    create_runtime,
+    mark_review_required,
+    mark_worker_reported,
+    request_spawn,
+)
 from astrid.permissions import PermissionManager
 from astrid.prompt import build_system_prompt
+from astrid.sub_agents import AgentType, SubAgentManager
 from astrid.session import (
     AutosaveManager,
     SessionData,
@@ -82,7 +94,7 @@ from astrid.tui.transcript import (
     render_transcript,
     render_transcript_simple,
 )
-from astrid.tui.types import TranscriptEntry
+from astrid.tui.types import OrchestrationWorker, TranscriptEntry
 from astrid.types import ChatMessage, ModelAdapter
 from astrid.workspace import resolve_tool_path
 
@@ -219,8 +231,10 @@ class ScreenState:
     agent_thread: Any = None
     agent_result: dict | None = None
     agent_lock: Any = None
-    # Tool execution时间跟踪
     tool_start_time: float | None = None
+    orchestration: OrchestratorState | None = None
+    orchestration_entry_id: int | None = None
+    sub_agent_manager: SubAgentManager | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +264,139 @@ def _push_transcript_entry(state: ScreenState, **kwargs: Any) -> int:
     state.next_entry_id += 1
     state.transcript.append(TranscriptEntry(id=entry_id, **kwargs))
     return entry_id
+
+
+def _find_transcript_entry(state: ScreenState, entry_id: int) -> TranscriptEntry | None:
+    for entry in state.transcript:
+        if entry.id == entry_id:
+            return entry
+    return None
+
+
+def _is_multi_agent_candidate(input_text: str) -> bool:
+    lowered = input_text.lower()
+    keywords = (
+        "multi-agent",
+        "multi agent",
+        "subagent",
+        "sub-agent",
+        "并行",
+        "多agent",
+        "多 agent",
+        "review",
+        "orchestr",
+    )
+    if any(keyword in lowered for keyword in keywords):
+        return True
+    return len(input_text) >= 48
+
+
+def _pick_worker_name(role: WorkerRole, index: int) -> tuple[str, str]:
+    role_pool: dict[WorkerRole, list[tuple[str, str]]] = {
+        WorkerRole.CONTEXT_SCOUT: [
+            ("Russell", "teal"),
+            ("Hume", "sage"),
+            ("Turing", "blue"),
+        ],
+        WorkerRole.CODE_WORKER: [
+            ("Ada", "amber"),
+            ("Knuth", "coral"),
+            ("Hopper", "violet"),
+        ],
+        WorkerRole.REVIEW_AGENT: [
+            ("Hegel", "blue"),
+            ("Popper", "teal"),
+            ("Godel", "violet"),
+        ],
+    }
+    options = role_pool[role]
+    return options[index % len(options)]
+
+
+def _to_orchestration_workers(runtime: OrchestratorState) -> list[OrchestrationWorker]:
+    status_map = {
+        WorkerRuntimeState.QUEUED: "queued",
+        WorkerRuntimeState.RUNNING: "running",
+        WorkerRuntimeState.REPORTING: "reporting",
+        WorkerRuntimeState.BLOCKED: "blocked",
+        WorkerRuntimeState.ARCHIVED: "done",
+        WorkerRuntimeState.FAILED: "failed",
+        WorkerRuntimeState.CANCELLED: "failed",
+    }
+    return [
+        OrchestrationWorker(
+            name=worker.name,
+            role=worker.role.value,
+            mission=worker.mission,
+            status=status_map.get(worker.state, "queued"),
+            colorKey=worker.color,
+            latestEvent=worker.latest_event,
+        )
+        for worker in runtime.workers.values()
+    ]
+
+
+def _sync_orchestration_entry(state: ScreenState) -> None:
+    runtime = state.orchestration
+    if runtime is None:
+        return
+
+    workers = _to_orchestration_workers(runtime)
+    if state.orchestration_entry_id is None:
+        state.orchestration_entry_id = _push_transcript_entry(
+            state,
+            kind="orchestration",
+            body=runtime.narrative,
+            narrativeLine=runtime.narrative,
+            workers=workers,
+        )
+        return
+
+    entry = _find_transcript_entry(state, state.orchestration_entry_id)
+    if entry is None:
+        state.orchestration_entry_id = None
+        _sync_orchestration_entry(state)
+        return
+
+    entry.body = runtime.narrative
+    entry.narrativeLine = runtime.narrative
+    entry.workers = workers
+
+
+def _set_worker_state(
+    state: ScreenState,
+    worker_id: str,
+    *,
+    status: WorkerRuntimeState | None = None,
+    latest_event: str | None = None,
+) -> None:
+    runtime = state.orchestration
+    if runtime is None or worker_id not in runtime.workers:
+        return
+    worker = runtime.workers[worker_id]
+    if status is not None:
+        worker.state = status
+    if latest_event is not None:
+        worker.latest_event = latest_event
+    _sync_orchestration_entry(state)
+
+
+def _begin_orchestration(state: ScreenState, input_text: str) -> OrchestratorState:
+    state.orchestration = create_runtime(input_text)
+    state.orchestration_entry_id = None
+    request_spawn(state.orchestration)
+    _sync_orchestration_entry(state)
+    state.status = state.orchestration.narrative
+    return state.orchestration
+
+
+def _summarize_worker_result(instance: Any) -> str:
+    summary = instance.result_summary or {}
+    output = str(summary.get("final_output") or instance.result or "").strip()
+    if not output:
+        return f"{instance.definition.name} finished with no final output."
+    first_line = next((line.strip() for line in output.splitlines() if line.strip()), output)
+    return f"{instance.definition.name}: {first_line[:180]}"
 
 
 def _mark_running_tools_as_error(state: ScreenState, message: str) -> None:
@@ -1148,6 +1295,13 @@ def _handle_input(
         ),
     }
     args.messages.append({"role": "user", "content": input_text})
+    use_multi_agent = _is_multi_agent_candidate(input_text)
+    if use_multi_agent:
+        _begin_orchestration(state, input_text)
+        state.sub_agent_manager = SubAgentManager(
+            parent_session_id=state.session.session_id if state.session else "live-session",
+            app_state=state.app_state,
+        )
 
     def on_assistant_message(content: str) -> None:
         _push_transcript_entry(state, kind="assistant", body=content)
@@ -1305,6 +1459,192 @@ def _handle_input(
     agent_error = None
     agent_result: dict = {"messages": None}
     agent_thread_lock = threading.Lock()
+
+    def _make_worker_callbacks(
+        worker_id: str,
+        worker_name: str,
+    ) -> tuple[
+        Callable[[str], None],
+        Callable[[str], None],
+        Callable[[str, dict], None],
+        Callable[[str, str, bool], None],
+    ]:
+        def _worker_assistant(content: str) -> None:
+            _set_worker_state(
+                state,
+                worker_id,
+                latest_event=f"reported: {content.splitlines()[0][:80]}",
+            )
+            rerender()
+
+        def _worker_progress(content: str) -> None:
+            _set_worker_state(
+                state,
+                worker_id,
+                latest_event=f"thinking: {content.splitlines()[0][:80]}",
+            )
+            rerender()
+
+        def _worker_tool_start(tool_name: str, tool_input: dict) -> None:
+            summary = _summarize_tool_input(tool_name, tool_input)
+            _set_worker_state(
+                state,
+                worker_id,
+                status=WorkerRuntimeState.RUNNING,
+                latest_event=summary[:100],
+            )
+            state.status = f"{worker_name} running {tool_name}..."
+            rerender()
+
+        def _worker_tool_result(tool_name: str, output: str, is_error: bool) -> None:
+            result_prefix = "error" if is_error else "done"
+            first_line = next((line.strip() for line in output.splitlines() if line.strip()), tool_name)
+            _set_worker_state(
+                state,
+                worker_id,
+                latest_event=f"{result_prefix}: {first_line[:92]}",
+            )
+            rerender()
+
+        return _worker_assistant, _worker_progress, _worker_tool_start, _worker_tool_result
+
+    def _run_multi_agent_background() -> None:
+        nonlocal agent_error, agent_result
+        manager = state.sub_agent_manager
+        runtime_state = state.orchestration
+        if manager is None or runtime_state is None:
+            return
+
+        try:
+            worker_specs = [
+                (
+                    AgentType.EXPLORE,
+                    WorkerRole.CONTEXT_SCOUT,
+                    "inspect relevant files and summarize code context",
+                    "read-only search and context gathering",
+                ),
+                (
+                    AgentType.GENERAL,
+                    WorkerRole.CODE_WORKER,
+                    "produce implementation changes or a concrete patch strategy",
+                    "code modification and execution within current workspace",
+                ),
+            ]
+            completed_summaries: list[str] = []
+
+            for index, (agent_type, role, mission, scope) in enumerate(worker_specs):
+                worker_name, color = _pick_worker_name(role, index)
+                worker_record = runtime_state.spawn_worker(
+                    name=worker_name,
+                    role=role,
+                    mission=mission,
+                    scope=scope,
+                    color=color,
+                )
+                _set_worker_state(
+                    state,
+                    worker_record.id,
+                    status=WorkerRuntimeState.RUNNING,
+                    latest_event="starting",
+                )
+                runtime_state.task_state = TaskRuntimeState.RUNNING
+                runtime_state.narrative = f"{worker_name} is working on {role.value}..."
+                _sync_orchestration_entry(state)
+                rerender()
+
+                callbacks = _make_worker_callbacks(worker_record.id, worker_name)
+                instance = manager.spawn_agent(
+                    agent_type,
+                    (
+                        f"{input_text}\n\n"
+                        f"Your role: {role.value}.\n"
+                        f"Mission: {mission}.\n"
+                        f"Scope: {scope}."
+                    ),
+                )
+                instance = manager.execute_agent(
+                    instance.id,
+                    model=args.model,
+                    tools=args.tools,
+                    cwd=args.cwd,
+                    permissions=args.permissions,
+                    on_assistant_message=callbacks[0],
+                    on_progress_message=callbacks[1],
+                    on_tool_start=callbacks[2],
+                    on_tool_result=callbacks[3],
+                )
+                mark_worker_reported(runtime_state, worker_record.id, instance.result or "")
+                _sync_orchestration_entry(state)
+                completed_summaries.append(_summarize_worker_result(instance))
+                rerender()
+
+            reviewer_name, reviewer_color = _pick_worker_name(WorkerRole.REVIEW_AGENT, 0)
+            reviewer_record = runtime_state.spawn_worker(
+                name=reviewer_name,
+                role=WorkerRole.REVIEW_AGENT,
+                mission="validate worker output and highlight risk",
+                scope="review collected worker summaries only",
+                color=reviewer_color,
+            )
+            mark_review_required(runtime_state, reviewer_summary="review in progress")
+            _set_worker_state(
+                state,
+                reviewer_record.id,
+                status=WorkerRuntimeState.RUNNING,
+                latest_event="checking worker output",
+            )
+            _sync_orchestration_entry(state)
+            rerender()
+
+            callbacks = _make_worker_callbacks(reviewer_record.id, reviewer_name)
+            reviewer_instance = manager.spawn_agent(
+                AgentType.PLAN,
+                (
+                    f"Review the following worker results for the task:\n{input_text}\n\n"
+                    + "\n".join(f"- {summary}" for summary in completed_summaries)
+                    + "\n\nReturn a concise review verdict with risks and confidence."
+                ),
+            )
+            reviewer_instance = manager.execute_agent(
+                reviewer_instance.id,
+                model=args.model,
+                tools=args.tools,
+                cwd=args.cwd,
+                permissions=args.permissions,
+                on_assistant_message=callbacks[0],
+                on_progress_message=callbacks[1],
+                on_tool_start=callbacks[2],
+                on_tool_result=callbacks[3],
+            )
+            mark_worker_reported(runtime_state, reviewer_record.id, reviewer_instance.result or "")
+            runtime_state.task_state = TaskRuntimeState.MERGING
+            runtime_state.narrative = "Merging worker output into final response..."
+            _sync_orchestration_entry(state)
+
+            final_summary = "\n".join(completed_summaries + [_summarize_worker_result(reviewer_instance)])
+            final_message = "Multi-agent summary\n\n" + final_summary
+            _push_transcript_entry(
+                state,
+                kind="assistant",
+                body=final_message,
+            )
+
+            for worker_id in list(runtime_state.workers.keys()):
+                archive_worker(runtime_state, worker_id)
+            _sync_orchestration_entry(state)
+
+            with agent_thread_lock:
+                agent_result["messages"] = list(args.messages) + [{"role": "assistant", "content": final_message}]
+        except Exception as e:
+            agent_error = e
+        finally:
+            args.permissions.end_turn()
+            with agent_thread_lock:
+                agent_result["done"] = True
+            state.is_busy = False
+            state.active_tool = None
+            state.status = state.orchestration.narrative if state.orchestration else None
+            rerender()
     
     def _run_agent_background():
         nonlocal agent_error, agent_result
@@ -1333,7 +1673,8 @@ def _handle_input(
             state.status = None
             rerender()
     
-    agent_thread = threading.Thread(target=_run_agent_background, daemon=True)
+    target = _run_multi_agent_background if use_multi_agent else _run_agent_background
+    agent_thread = threading.Thread(target=target, daemon=True)
     agent_thread.start()
     state.agent_thread = agent_thread
     # Assign lock BEFORE result — the main loop checks agent_result first,

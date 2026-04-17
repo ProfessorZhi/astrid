@@ -99,7 +99,20 @@ def _save_transcript_file(cwd: str, permissions, transcript: list[TranscriptEntr
     target.write_text(format_transcript_text(transcript), encoding="utf-8")
     return str(target)
 
+
+def _configure_stdio() -> None:
+    """Prefer UTF-8 stdio on Windows so startup banners don't crash."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 def main() -> None:
+    _configure_stdio()
     parser = argparse.ArgumentParser(
         description="Astrid - A lightweight terminal coding assistant",
         add_help=True,

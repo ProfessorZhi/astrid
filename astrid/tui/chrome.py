@@ -230,6 +230,24 @@ def color_badge(label: str, value: str, color: str, icon: str = "") -> str:
     return f"{icon_part}{color}{t.dim}[{label}]{t.reset} {t.bold}{value}{t.reset}"
 
 
+_WORKER_ACCENTS: dict[str, str] = {
+    "teal": "\x1b[38;2;109;159;156m",
+    "blue": "\x1b[38;2;110;145;186m",
+    "amber": "\x1b[38;2;190;145;84m",
+    "coral": "\x1b[38;2;186;112;103m",
+    "sage": "\x1b[38;2;133;160;118m",
+    "violet": "\x1b[38;2;145;127;176m",
+}
+_WORKER_ACCENT_ORDER: tuple[str, ...] = tuple(_WORKER_ACCENTS.values())
+
+
+def get_worker_accent(color_key: str | None, index: int = 0) -> str:
+    """Resolve a stable worker accent color by semantic key or fallback index."""
+    if color_key and color_key in _WORKER_ACCENTS:
+        return _WORKER_ACCENTS[color_key]
+    return _WORKER_ACCENT_ORDER[index % len(_WORKER_ACCENT_ORDER)]
+
+
 def border_line(kind: str, width: int, color: str = "") -> str:
     """Unicode box drawing: ╭─╮ or ╰─╯."""
     c = color or BORDER

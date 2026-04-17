@@ -18,8 +18,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
+from astrid.agent_loop import run_agent_turn
 from astrid.context_manager import ContextManager
 from astrid.state import AppState, Store
+from astrid.tooling import ToolDefinition, ToolRegistry
+from astrid.types import ChatMessage, ModelAdapter
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +123,7 @@ class AgentInstance:
     completed_at: float | None = None
     status: str = "running"  # running, completed, failed, cancelled
     result: str | None = None
+    result_summary: dict[str, Any] | None = None
     error: str | None = None
     turn_count: int = 0
 
@@ -143,6 +147,67 @@ class SubAgentManager:
             AgentType.PLAN: AgentDefinition.plan_agent(),
             AgentType.GENERAL: AgentDefinition.general_agent(),
         }
+
+    def _build_result_summary(self, instance: AgentInstance) -> dict[str, Any]:
+        """Build a structured result summary for parent orchestration."""
+        token_usage = 0
+        message_count = len(instance.messages)
+        if instance.context_manager:
+            stats = instance.context_manager.get_stats()
+            token_usage = stats.total_tokens
+            message_count = stats.messages_count
+
+        return {
+            "agent_id": instance.id,
+            "agent_name": instance.definition.name,
+            "agent_type": instance.definition.type.value,
+            "status": instance.status,
+            "task_description": instance.task_description,
+            "turn_count": instance.turn_count,
+            "final_output": instance.result or "",
+            "error": instance.error,
+            "message_count": message_count,
+            "token_usage": token_usage,
+        }
+
+    def _refresh_result_summary(self, instance: AgentInstance) -> None:
+        instance.result_summary = self._build_result_summary(instance)
+
+    def _ensure_task_prompt(self, instance: AgentInstance) -> list[ChatMessage]:
+        """Ensure the worker sees its task description as a user message."""
+        messages = list(instance.messages)
+        if not any(
+            message.get("role") == "user"
+            and message.get("content") == instance.task_description
+            for message in messages
+        ):
+            messages.append({"role": "user", "content": instance.task_description})
+        return messages
+
+    def _filter_tools_for_agent(
+        self,
+        instance: AgentInstance,
+        tools: ToolRegistry | list[ToolDefinition],
+    ) -> ToolRegistry:
+        """Restrict tools according to the agent definition."""
+        registry = tools if isinstance(tools, ToolRegistry) else ToolRegistry(list(tools))
+        available_tools = registry.list()
+        allowed = set(instance.definition.allowed_tools)
+        disallowed = set(instance.definition.disallowed_tools)
+
+        if allowed:
+            filtered = [tool for tool in available_tools if tool.name in allowed]
+        else:
+            filtered = list(available_tools)
+
+        if disallowed:
+            filtered = [tool for tool in filtered if tool.name not in disallowed]
+
+        return ToolRegistry(
+            filtered,
+            skills=registry.get_skills(),
+            mcp_servers=registry.get_mcp_servers(),
+        )
     
     def get_definition(self, agent_type: AgentType) -> AgentDefinition:
         """Get agent definition."""
@@ -205,6 +270,63 @@ class SubAgentManager:
             instance.context_manager.add_message(message)
         
         return True
+
+    def execute_agent(
+        self,
+        agent_id: str,
+        *,
+        model: ModelAdapter,
+        tools: ToolRegistry | list[ToolDefinition],
+        cwd: str,
+        permissions: Any | None = None,
+        max_steps: int | None = None,
+        on_tool_start: Callable[[str, dict], None] | None = None,
+        on_tool_result: Callable[[str, str, bool], None] | None = None,
+        on_assistant_message: Callable[[str], None] | None = None,
+        on_progress_message: Callable[[str], None] | None = None,
+    ) -> AgentInstance:
+        """Execute a spawned sub-agent through the shared agent loop."""
+        instance = self.agents.get(agent_id)
+        if instance is None:
+            raise KeyError(f"Unknown agent: {agent_id}")
+        if instance.status != "running":
+            raise ValueError(f"Agent {agent_id} is not runnable (status={instance.status}).")
+
+        registry = self._filter_tools_for_agent(instance, tools)
+        messages = self._ensure_task_prompt(instance)
+
+        try:
+            result_messages = run_agent_turn(
+                model=model,
+                tools=registry,
+                messages=messages,
+                cwd=cwd,
+                permissions=permissions,
+                max_steps=max_steps or instance.definition.max_turns,
+                on_tool_start=on_tool_start,
+                on_tool_result=on_tool_result,
+                on_assistant_message=on_assistant_message,
+                on_progress_message=on_progress_message,
+                context_manager=instance.context_manager,
+            )
+        except Exception as error:
+            instance.messages = messages
+            self.fail_agent(agent_id, str(error))
+            self._refresh_result_summary(instance)
+            raise
+
+        instance.messages = result_messages
+        instance.turn_count += 1
+
+        assistant_messages = [
+            message
+            for message in result_messages
+            if message.get("role") == "assistant"
+        ]
+        final_output = assistant_messages[-1]["content"] if assistant_messages else ""
+        self.complete_agent(agent_id, final_output)
+        self._refresh_result_summary(instance)
+        return instance
     
     def complete_agent(self, agent_id: str, result: str) -> bool:
         """Mark agent as completed with result."""
@@ -215,7 +337,8 @@ class SubAgentManager:
         instance.status = "completed"
         instance.result = result
         instance.completed_at = time.time()
-        
+        self._refresh_result_summary(instance)
+
         return True
     
     def fail_agent(self, agent_id: str, error: str) -> bool:
@@ -227,7 +350,8 @@ class SubAgentManager:
         instance.status = "failed"
         instance.error = error
         instance.completed_at = time.time()
-        
+        self._refresh_result_summary(instance)
+
         return False
     
     def cancel_agent(self, agent_id: str) -> bool:
@@ -238,7 +362,8 @@ class SubAgentManager:
         
         instance.status = "cancelled"
         instance.completed_at = time.time()
-        
+        self._refresh_result_summary(instance)
+
         return True
     
     def get_agent(self, agent_id: str) -> AgentInstance | None:
@@ -298,20 +423,23 @@ class SubAgentManager:
         instance = self.agents.get(agent_id)
         if not instance:
             return f"Agent {agent_id} not found."
-        
+
+        summary = instance.result_summary or self._build_result_summary(instance)
+
         lines = [
             f"[Sub-agent {instance.definition.name} completed]",
-            f"  Turns: {instance.turn_count}",
-            f"  Status: {instance.status}",
+            f"  Turns: {summary['turn_count']}",
+            f"  Status: {summary['status']}",
         ]
-        
-        if instance.result:
-            lines.append(f"  Result: {instance.result[:200]}")
-        
-        if instance.context_manager:
-            stats = instance.context_manager.get_stats()
-            lines.append(f"  Tokens used: {stats.total_tokens:,}")
-        
+
+        if summary["final_output"]:
+            lines.append(f"  Result: {summary['final_output'][:200]}")
+
+        if summary["error"]:
+            lines.append(f"  Error: {summary['error']}")
+
+        lines.append(f"  Tokens used: {summary['token_usage']:,}")
+
         return "\n".join(lines)
 
 
