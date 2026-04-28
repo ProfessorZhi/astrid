@@ -231,10 +231,10 @@ def test_apply_terminal_mode_enables_fullscreen_tui(monkeypatch) -> None:
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "1"
 
 
-def test_resolve_terminal_mode_defaults_to_tui_on_windows(monkeypatch) -> None:
+def test_resolve_terminal_mode_defaults_to_native_shell_on_windows(monkeypatch) -> None:
     monkeypatch.setattr(main_mod.sys, "platform", "win32")
 
-    assert main_mod._resolve_terminal_mode(shell_flag=False, tui_flag=False) == "tui"
+    assert main_mod._resolve_terminal_mode(shell_flag=False, tui_flag=False) == "shell"
 
 
 def test_resolve_terminal_mode_allows_explicit_tui_override(monkeypatch) -> None:
@@ -268,7 +268,7 @@ def test_main_shell_flag_sets_shell_terminal_mode(monkeypatch, tmp_path) -> None
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
-def test_main_defaults_to_tui_mode_on_windows(monkeypatch, tmp_path) -> None:
+def test_main_defaults_to_native_tty_mode_on_windows(monkeypatch, tmp_path) -> None:
     calls = _patch_main_runtime(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(main_mod.sys, "argv", ["astrid"])
@@ -281,8 +281,8 @@ def test_main_defaults_to_tui_mode_on_windows(monkeypatch, tmp_path) -> None:
 
     assert calls["tty_calls"] == 1
     assert calls["shell_calls"] == 0
-    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "tui"
-    assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "1"
+    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "shell"
+    assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
 def test_main_shell_flag_overrides_default_agent_mode_on_windows(monkeypatch, tmp_path) -> None:

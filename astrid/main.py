@@ -151,6 +151,8 @@ def _apply_terminal_mode(mode: str) -> None:
 
 
 def _default_terminal_mode() -> str:
+    if sys.platform == "win32":
+        return "shell"
     return "tui"
 
 
@@ -536,7 +538,7 @@ def main() -> None:
                 messages = next_messages
             return
 
-        if _is_shell_mode():
+        if args.shell:
             _run_shell_repl(
                 cwd=cwd,
                 permissions=permissions,
