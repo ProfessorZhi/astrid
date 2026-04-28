@@ -94,10 +94,10 @@ def test_render_welcome_workbench_renders_full_builtin_pet_sprite() -> None:
     )
 
     plain = chrome.strip_ansi(rendered)
-    assert "_,--._" in plain
-    assert "( o  o )" in plain
-    assert "/[______]\\\\" in plain
+    assert "\u2588" in plain
+    assert "o  o" in plain
     assert "turtle buddy" in plain
+    assert "_,--._" not in plain
     assert "{##} turtle buddy" not in plain
 
 
@@ -114,10 +114,10 @@ def test_render_welcome_workbench_stacks_full_pet_on_narrow_width() -> None:
     )
 
     plain = chrome.strip_ansi(rendered)
-    assert "_,--._" in plain
-    assert "( o  o )" in plain
-    assert "/[______]\\\\" in plain
+    assert "\u2588" in plain
+    assert "o  o" in plain
     assert "Welcome back" in plain
+    assert "_,--._" not in plain
     assert "{##} turtle buddy" not in plain
 
 
@@ -511,24 +511,32 @@ def test_render_buddy_block_uses_species_frame() -> None:
     assert rendered_a != rendered_b
 
 
+def test_builtin_buddy_sprites_render_as_solid_shapes() -> None:
+    rendered = render_buddy_block("snail", animation_tick=0)
+
+    assert "\u2588" in rendered
+    assert ".--." not in rendered
+    assert "`--'" not in rendered
+
+
 def test_key_buddy_species_have_distinct_sprite_shapes() -> None:
     duck = render_buddy_block("duck", animation_tick=0)
     goose = render_buddy_block("goose", animation_tick=0)
     robot = render_buddy_block("robot", animation_tick=0)
 
-    assert "<(o )___" in duck
-    assert "_(__)_" in goose
-    assert ".[||]." in robot
+    assert "\u2588" in duck
+    assert "\u2588" in goose
+    assert "\u2588" in robot
+    assert len({duck, goose, robot}) == 3
 
 
 def test_builtin_duck_sprite_keeps_curated_shape_in_all_frames() -> None:
     frames = [render_buddy_block("duck", animation_tick=i) for i in range(3)]
 
-    assert "    __" in frames[0]
-    assert "<(o )___" in frames[0]
-    assert "`--'" in frames[0]
-    assert "`--'~" in frames[1]
-    assert "(  .__>" in frames[2]
+    assert "\u2588" in frames[0]
+    assert "<(o )___" not in frames[0]
+    assert "`--'" not in frames[0]
+    assert len(set(frames)) == 3
 
 
 def test_render_buddy_profile_block_supports_bubble_and_hearts() -> None:
@@ -557,7 +565,7 @@ def test_render_buddy_profile_block_hero_mode_scales_sprite() -> None:
 
     assert len(hero.splitlines()) > len(normal.splitlines())
     plain = chrome.strip_ansi(hero)
-    assert "<(o )___" in plain
+    assert "\u2588" in plain
     assert "<(oo )" not in plain
     assert "<<((" not in hero
 
@@ -592,7 +600,7 @@ def test_render_buddy_profile_block_hero_mode_drops_idle_blank_hat_slot() -> Non
     hero = render_buddy_profile_block(profile, runtime, animation_tick=0, hero=True)
     meaningful = [line for line in hero.splitlines() if line.strip()]
 
-    assert "[||" in meaningful[0]
+    assert "\u2588" in meaningful[0]
 
 
 def test_render_buddy_profile_block_hero_mode_trims_excess_left_padding() -> None:
@@ -616,14 +624,15 @@ def test_render_buddy_profile_block_hero_mode_uses_compact_badge_line() -> None:
     assert "Star Buddy" not in hero
 
 
-def test_render_buddy_profile_block_hero_mode_keeps_original_duck_shape() -> None:
+def test_render_buddy_profile_block_hero_mode_keeps_solid_duck_shape() -> None:
     profile = build_buddy_profile("demo-seed", species_override="duck")
     runtime = BuddyRuntimeState()
 
     hero = chrome.strip_ansi(render_buddy_profile_block(profile, runtime, animation_tick=0, hero=True))
 
-    assert "<(o )___" in hero
-    assert "`--'" in hero
+    assert "\u2588" in hero
+    assert "<(o )___" not in hero
+    assert "`--'" not in hero
     assert "oo" not in hero
 
 
@@ -634,7 +643,8 @@ def test_render_welcome_hero_profile_block_uses_builtin_ascii_pet_for_duck() -> 
     hero = render_welcome_hero_profile_block(profile, runtime, animation_tick=0)
 
     plain = chrome.strip_ansi(hero)
-    assert "<(o )___" in plain
+    assert "\u2588" in plain
+    assert "<(o )___" not in plain
     assert "Duck" in plain
     assert "Drift" not in plain
 

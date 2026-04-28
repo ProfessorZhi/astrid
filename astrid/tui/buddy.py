@@ -153,6 +153,9 @@ _RARITY_COLORS: Final[dict[str, str]] = {
     "legendary": "\x1b[38;5;221m",
 }
 
+_SOLID_GLYPH: Final[str] = "\u2588"
+_SOLID_BODY_CHARS: Final[set[str]] = set(r"\/|()[]{}<>._,-`'~^=*@nuv#")
+
 
 def normalize_buddy_species(species: str | None) -> str:
     candidate = (species or "").strip().lower()
@@ -175,6 +178,13 @@ def _replace_eye_slots(text: str, eye: str) -> str:
     return text.replace("{E}", eye)
 
 
+def _solidify_sprite_line(text: str, eye: str) -> str:
+    return "".join(
+        char if char.isspace() or char == eye else _SOLID_GLYPH if char in _SOLID_BODY_CHARS else char
+        for char in text
+    )
+
+
 def _render_species_lines(species: str | None, animation_tick: int, eye: str = "o", hat: str = "none") -> list[str]:
     frame = [_replace_eye_slots(line, eye) for line in _resolve_frame(species, animation_tick)]
     if hat != "none" and not frame[0].strip():
@@ -183,7 +193,7 @@ def _render_species_lines(species: str | None, animation_tick: int, eye: str = "
         all_blank = all(not species_frame[0].strip() for species_frame in _BODIES[normalize_buddy_species(species)])
         if all_blank:
             frame = frame[1:]
-    return frame
+    return [_solidify_sprite_line(line, eye) for line in frame]
 
 
 def get_buddy_frame(species: str | None, animation_tick: int) -> tuple[str, ...]:

@@ -910,13 +910,14 @@ def test_buddy_profile_can_follow_selected_species() -> None:
     assert profile.bones.species == "goose"
 
 
-def test_render_welcome_pet_block_uses_builtin_ascii_pet_for_builtin_species() -> None:
+def test_render_welcome_pet_block_uses_solid_builtin_pet_for_builtin_species() -> None:
     state = ScreenState(history=[])
     profile = build_buddy_profile("demo-seed", species_override="duck")
 
     block = _render_welcome_pet_block(state, profile)
 
-    assert "<(o )___" in block
+    assert "\u2588" in block
+    assert "<(o )___" not in block
     assert "Duck" in block
 
 
