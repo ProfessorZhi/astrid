@@ -125,8 +125,16 @@ def _should_use_alternate_screen() -> bool:
     return _terminal_mode() == "tui"
 
 
+def _is_codex_embedded_terminal() -> bool:
+    originator = os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "")
+    return os.environ.get("CODEX_SHELL") == "1" or originator.strip().lower() == "codex desktop"
+
+
 def _terminal_mode() -> str:
-    mode = os.environ.get("ASTRID_TERMINAL_MODE", "tui").strip().lower()
+    raw_mode = os.environ.get("ASTRID_TERMINAL_MODE")
+    if raw_mode is None and _is_codex_embedded_terminal():
+        return "shell"
+    mode = (raw_mode or "tui").strip().lower()
     if mode == "agent":
         return "tui"
     return mode if mode in {"tui", "shell"} else "tui"

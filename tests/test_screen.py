@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from io import StringIO
 
+import pytest
+
 from astrid.tui import screen
+
+
+@pytest.fixture(autouse=True)
+def _clear_codex_terminal_env(monkeypatch) -> None:
+    monkeypatch.delenv("CODEX_SHELL", raising=False)
+    monkeypatch.delenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", raising=False)
 
 
 def test_empty_term_is_not_treated_as_dumb_terminal(monkeypatch) -> None:
@@ -114,6 +122,33 @@ def test_windows_enter_alternate_screen_uses_alt_buffer_by_default(monkeypatch) 
     assert screen.ERASE_SCREEN_AND_HOME in rendered
     assert screen.DISABLE_ALTERNATE_SCROLL in rendered
     assert screen.ENABLE_MOUSE_TRACKING not in rendered
+
+
+def test_codex_embedded_terminal_defaults_to_native_scrollback(monkeypatch) -> None:
+    output = StringIO()
+
+    class _TTYBuffer:
+        def isatty(self) -> bool:
+            return True
+
+        def write(self, data: str) -> int:
+            return output.write(data)
+
+        def flush(self) -> None:
+            output.flush()
+
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("CODEX_SHELL", "1")
+    monkeypatch.delenv("ASTRID_TERMINAL_MODE", raising=False)
+    monkeypatch.delenv("ASTRID_ALT_SCREEN", raising=False)
+    monkeypatch.setattr(screen.sys, "platform", "win32")
+    monkeypatch.setattr(screen, "_enable_windows_vt_processing", lambda: None)
+    monkeypatch.setattr(screen.sys, "stdout", _TTYBuffer())
+
+    screen.enter_alternate_screen()
+
+    assert screen._terminal_mode() == "shell"
+    assert output.getvalue() == ""
 
 
 def test_windows_exit_alternate_screen_restores_alt_buffer_by_default(monkeypatch) -> None:

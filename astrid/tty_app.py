@@ -105,6 +105,7 @@ from astrid.tui.screen import (
     hide_cursor,
     _should_capture_mouse,
     _should_use_alternate_screen,
+    _terminal_mode,
     show_cursor,
 )
 from astrid.tui.theme import theme
@@ -190,16 +191,22 @@ class _ThrottledRenderer:
 
 def _busy_animation_interval(terminal_mode: str) -> float | None:
     """Return the spinner cadence for the active terminal mode."""
+    if terminal_mode == "shell":
+        return None
     return 0.25
 
 
 def _idle_poll_interval(terminal_mode: str) -> float:
     """Return the main-loop idle sleep interval for the active terminal mode."""
+    if terminal_mode == "shell":
+        return 0.1
     return 0.05
 
 
 def _render_throttle_interval(terminal_mode: str) -> float:
     """Return the rerender throttle interval for the active terminal mode."""
+    if terminal_mode == "shell":
+        return 0.08
     return 0.016
 
 
@@ -2465,7 +2472,7 @@ def _handle_input(
         _enqueue_next_turn(state, input_text)
         return False
 
-    terminal_mode = os.environ.get("ASTRID_TERMINAL_MODE", "tui").strip().lower()
+    terminal_mode = _terminal_mode()
     if not input_text:
         return False
     if input_text == "/exit":
@@ -3252,6 +3259,8 @@ def run_tty_app(
                     _last_animation_tick = now
 
                 if (
+                    terminal_mode != "shell"
+                    and
                     not state.is_busy
                     and state.orchestration is None
                     and now - state.welcome_tip_rotated_at >= 5.0

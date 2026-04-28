@@ -320,6 +320,12 @@ def test_agent_mode_reuses_tui_animation_and_polling() -> None:
     assert _render_throttle_interval("tui") == 0.016
 
 
+def test_shell_mode_disables_periodic_animation_repaints() -> None:
+    assert _busy_animation_interval("shell") is None
+    assert _idle_poll_interval("shell") >= 0.1
+    assert _render_throttle_interval("shell") >= 0.05
+
+
 def test_terminal_mode_label_treats_agent_as_tui_for_users(monkeypatch) -> None:
     from astrid.tty_app import _terminal_mode_label
 
