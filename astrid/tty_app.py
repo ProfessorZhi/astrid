@@ -1094,7 +1094,7 @@ def _get_contextual_help(state: ScreenState, args: TtyAppArgs) -> str | None:
 
 
 def _terminal_mode_label() -> str:
-    mode = os.environ.get("ASTRID_TERMINAL_MODE", "").strip().lower()
+    mode = _terminal_mode()
     if mode == "shell":
         return "shell mode"
     return "tui mode"
@@ -2174,7 +2174,7 @@ class _WindowsMouseWheelFallback:
 def _maybe_start_windows_mouse_wheel_fallback() -> _WindowsMouseWheelFallback | None:
     if sys.platform != "win32":
         return None
-    if os.environ.get("ASTRID_TERMINAL_MODE", "").strip().lower() == "shell":
+    if _terminal_mode() == "shell":
         return None
 
     fallback = _WindowsMouseWheelFallback()
@@ -3161,7 +3161,7 @@ def run_tty_app(
 
     permissions.prompt = _permission_prompt_handler
 
-    terminal_mode = os.environ.get("ASTRID_TERMINAL_MODE", "tui").strip().lower()
+    terminal_mode = _terminal_mode()
     use_alternate_screen = _should_use_alternate_screen()
     _has_inline_frame = False
     _inline_line_count = 0

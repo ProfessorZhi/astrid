@@ -47,7 +47,15 @@ from io import StringIO
 from pathlib import Path
 import queue
 import time
+
+import pytest
 from PIL import Image
+
+
+@pytest.fixture(autouse=True)
+def _clear_codex_terminal_env(monkeypatch) -> None:
+    monkeypatch.delenv("CODEX_SHELL", raising=False)
+    monkeypatch.delenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", raising=False)
 
 
 def test_summarize_tool_output_prefers_first_meaningful_line() -> None:
@@ -324,6 +332,19 @@ def test_shell_mode_disables_periodic_animation_repaints() -> None:
     assert _busy_animation_interval("shell") is None
     assert _idle_poll_interval("shell") >= 0.1
     assert _render_throttle_interval("shell") >= 0.05
+
+
+def test_codex_terminal_uses_shell_mode_for_tty_loop(monkeypatch) -> None:
+    from astrid.tty_app import _terminal_mode_label
+    from astrid.tui.screen import _terminal_mode
+
+    monkeypatch.setenv("CODEX_SHELL", "1")
+    monkeypatch.delenv("ASTRID_TERMINAL_MODE", raising=False)
+
+    assert _terminal_mode() == "shell"
+    assert _terminal_mode_label() == "shell mode"
+    assert _busy_animation_interval(_terminal_mode()) is None
+    assert _render_throttle_interval(_terminal_mode()) >= 0.05
 
 
 def test_terminal_mode_label_treats_agent_as_tui_for_users(monkeypatch) -> None:
