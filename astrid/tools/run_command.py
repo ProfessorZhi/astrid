@@ -72,13 +72,22 @@ def split_command_line(command_line: str) -> list[str]:
     preserves backslashes, then try the native ``shlex.split`` as a
     last resort.
     """
+    def _unwrap_quoted_tokens(tokens: list[str]) -> list[str]:
+        unwrapped: list[str] = []
+        for token in tokens:
+            if len(token) >= 2 and token[0] == token[-1] and token[0] in {"'", '"'}:
+                unwrapped.append(token[1:-1])
+            else:
+                unwrapped.append(token)
+        return unwrapped
+
     if os.name == "nt":
         try:
-            return shlex.split(command_line, posix=False)
+            return _unwrap_quoted_tokens(shlex.split(command_line, posix=False))
         except ValueError:
             # If even non-posix fails, fall back to simple whitespace split
-            return command_line.split()
-    return shlex.split(command_line, posix=True)
+            return _unwrap_quoted_tokens(command_line.split())
+    return _unwrap_quoted_tokens(shlex.split(command_line, posix=True))
 
 
 def _is_allowed_command(command: str) -> bool:
@@ -91,8 +100,36 @@ def _is_read_only_command(command: str) -> bool:
     return cmd in READONLY_COMMANDS
 
 
+def _contains_shell_operators(command: str) -> bool:
+    quote_char: str | None = None
+    escaped = False
+    for index, char in enumerate(command):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote_char == '"':
+            escaped = True
+            continue
+        if quote_char:
+            if char == quote_char:
+                quote_char = None
+            continue
+        if char in {"'", '"'}:
+            quote_char = char
+            continue
+        if char == ";":
+            return True
+        if char in {"|", "<", ">", "`"}:
+            return True
+        if char == "&" and index + 1 < len(command) and command[index + 1] == "&":
+            return True
+        if char == "$" and index + 1 < len(command) and command[index + 1] == "(":
+            return True
+    return False
+
+
 def _looks_like_shell_snippet(command: str, args: list[str]) -> bool:
-    return not args and any(char in command for char in "|&;<>()$`")
+    return not args and _contains_shell_operators(command)
 
 
 def _is_background_shell_snippet(command: str, args: list[str]) -> bool:

@@ -39,6 +39,12 @@ ACCENT2 = "\x1b[38;5;141m"
 SUBTLE = "\x1b[38;5;243m"
 HIGHLIGHT_BG = "\x1b[48;5;236m"
 
+# Welcome workbench palette: warm orange tones kept local to this layout.
+WELCOME_BORDER = "\x1b[38;2;225;130;60m"
+WELCOME_BORDER_DIM = "\x1b[38;2;163;92;42m"
+WELCOME_ACCENT = "\x1b[38;2;248;179;102m"
+WELCOME_MUTED = "\x1b[38;2;184;133;93m"
+
 # ---------------------------------------------------------------------------
 # Unicode decorative characters
 # ---------------------------------------------------------------------------
@@ -249,18 +255,19 @@ def get_worker_accent(color_key: str | None, index: int = 0) -> str:
 
 
 def border_line(kind: str, width: int, color: str = "") -> str:
-    """Unicode box drawing: ╭─╮ or ╰─╯."""
+    """ASCII-safe border line for terminals with inconsistent wide-char handling."""
     c = color or BORDER
+    middle = "-" * max(0, width - 2)
     if kind == "top":
-        return f"{c}╭{'─' * (width - 2)}╮{RESET}"
+        return f"{c}+{middle}+{RESET}"
     elif kind == "bottom":
-        return f"{c}╰{'─' * (width - 2)}╯{RESET}"
+        return f"{c}+{middle}+{RESET}"
     else:
-        return f"{c}├{'─' * (width - 2)}┤{RESET}"
+        return f"{c}|{middle}|{RESET}"
 
 
 def panel_row(left: str, width: int, right: str | None = None, border_color: str = "") -> str:
-    """│ left ... right │"""
+    """ASCII-safe panel row."""
     bc = border_color or BORDER
     inner_width = width - 4
     if right:
@@ -270,9 +277,9 @@ def panel_row(left: str, width: int, right: str | None = None, border_color: str
         if gap < 1:
             left = truncate_plain(left, inner_width - r_w - 1)
             gap = 1
-        return f"{bc}│{RESET} {left}{' ' * gap}{right} {bc}│{RESET}"
+        return f"{bc}|{RESET} {left}{' ' * gap}{right} {bc}|{RESET}"
     else:
-        return f"{bc}│{RESET} {pad_plain(left, inner_width)} {bc}│{RESET}"
+        return f"{bc}|{RESET} {pad_plain(left, inner_width)} {bc}|{RESET}"
 
 
 def empty_panel_row(width: int) -> str:
@@ -396,6 +403,7 @@ def render_banner(
     permission_summary: list[str],
     session: dict[str, int],
     compact: bool = False,
+    companion_preview: str | None = None,
 ) -> str:
     """Render the workspace header panel.
 
@@ -442,6 +450,8 @@ def render_banner(
             f"  {t.header_label_info}{t.bold}model{t.reset} {model}"
             f"  {t.header_label_session}{t.bold}msgs{t.reset} {msg_count}"
         )
+        if companion_preview:
+            body = f"{body}\n\n{companion_preview}"
         return render_panel("Workspace", body)
 
     # Line 1 — project / provider / model / auth
@@ -462,7 +472,127 @@ def render_banner(
     )
 
     body = "\n".join([line1, line2])
+    if companion_preview:
+        body = f"{body}\n\n{companion_preview}"
     return render_panel("Workspace", body)
+
+
+def _welcome_column_widths(width: int, buddy_block: str) -> tuple[int, int]:
+    """Split the welcome card into Claude Code-like compact left / flexible right columns."""
+    inner_width = max(20, width - 4)
+    separator_width = 3
+    content_width = max(
+        20,
+        string_display_width("Welcome back"),
+        *(string_display_width(line) for line in buddy_block.splitlines() or [""]),
+    )
+    left_width = min(max(content_width + 4, 28), 50, max(28, inner_width - separator_width - 22))
+    right_width = max(18, inner_width - separator_width - left_width)
+    return left_width, right_width
+
+
+def _welcome_section_lines(
+    title: str,
+    items: list[str],
+    width: int,
+    *,
+    item_prefix: str = "",
+) -> list[str]:
+    lines = [f"{WELCOME_ACCENT}{BOLD}{title}{RESET}"]
+    if not items:
+        items = ["(none)"]
+    prefix_width = string_display_width(item_prefix)
+    item_width = max(0, width - prefix_width)
+    for item in items:
+        for chunk in item.splitlines() or [""]:
+            text = truncate_plain(chunk, item_width)
+            if item_prefix:
+                text = f"{item_prefix}{text}"
+            lines.append(text)
+    return lines
+
+
+def _render_welcome_row(left: str, right: str, width: int, *, left_width: int, right_width: int) -> str:
+    """Render a single two-column row inside the welcome card."""
+    divider = f"{WELCOME_BORDER_DIM}|{RESET}"
+    left_cell = pad_plain(truncate_plain(left, left_width), left_width)
+    right_cell = pad_plain(truncate_plain(right, right_width), right_width)
+    content = f"{left_cell} {divider} {right_cell}"
+    return f"{WELCOME_BORDER}|{RESET} {content} {WELCOME_BORDER}|{RESET}"
+
+
+def render_welcome_workbench(
+    *,
+    app_name: str,
+    version: str,
+    model_name: str,
+    workspace: str,
+    buddy_block: str,
+    tips: list[str],
+    recent_items: list[str],
+    width: int | None = None,
+) -> str:
+    """Render a compact welcome header that survives page flow."""
+    t = theme()
+    resolved_width = width if width is not None else _cached_terminal_size()[0]
+    panel_width = max(52, resolved_width - 4)
+    inner_width = max(28, panel_width - 4)
+
+    def _body_line(text: str = "") -> str:
+        return (
+            f"{WELCOME_BORDER}|{RESET} "
+            f"{pad_plain(truncate_plain(text, inner_width), inner_width)} "
+            f"{WELCOME_BORDER}|{RESET}"
+        )
+
+    buddy_lines = [line.rstrip() for line in buddy_block.splitlines()]
+    while buddy_lines and not strip_ansi(buddy_lines[0]).strip():
+        buddy_lines.pop(0)
+    while buddy_lines and not strip_ansi(buddy_lines[-1]).strip():
+        buddy_lines.pop()
+    if not buddy_lines:
+        buddy_lines = ["Buddy"]
+
+    tip_items = [item.strip("- ").strip() for item in tips[:2] if item.strip()]
+    recent_text = " | ".join(item.strip("- ").strip() for item in recent_items[:2] if item.strip()) or "No recent activity yet"
+    meta_text = f"{WELCOME_MUTED}{version or app_name}{RESET}"
+    workspace_text = f"{WELCOME_MUTED}model {model_name} | {truncate_path_middle(workspace, max(16, inner_width - 18))}{RESET}"
+    right_lines = [
+        f"{WELCOME_ACCENT}{t.bold}Welcome back{t.reset}",
+        meta_text,
+        workspace_text,
+    ]
+    if tip_items:
+        right_lines.append(f"{WELCOME_ACCENT}{t.bold}tips{t.reset}  {tip_items[0]}")
+        right_lines.extend(f"      {item}" for item in tip_items[1:])
+    right_lines.append(f"{WELCOME_ACCENT}{t.bold}recent{t.reset}  {recent_text}")
+
+    lines: list[str] = [f"{WELCOME_BORDER}+{'-' * (panel_width - 2)}+{RESET}"]
+
+    if inner_width >= 68:
+        left_width, right_width = _welcome_column_widths(panel_width, "\n".join(buddy_lines))
+        row_count = max(len(buddy_lines), len(right_lines))
+        for index in range(row_count):
+            left = buddy_lines[index] if index < len(buddy_lines) else ""
+            right = right_lines[index] if index < len(right_lines) else ""
+            lines.append(
+                _render_welcome_row(
+                    left,
+                    right,
+                    panel_width,
+                    left_width=left_width,
+                    right_width=right_width,
+                )
+            )
+    else:
+        for line in buddy_lines:
+            lines.append(_body_line(line))
+        lines.append(_body_line())
+        for line in right_lines:
+            lines.append(_body_line(line))
+
+    lines.append(f"{WELCOME_BORDER}+{'-' * (panel_width - 2)}+{RESET}")
+    return "\n".join(lines)
 
 
 def render_status_line(status: str | None) -> str:

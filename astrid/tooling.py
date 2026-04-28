@@ -3,15 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Protocol
-from abc import abstractmethod
 
 
 # ---------------------------------------------------------------------------
 # Tool metadata (inspired by Claude Code's Tool type)
 # ---------------------------------------------------------------------------
 
+
 class ToolCapability(str, Enum):
     """Tool capability flags."""
+
     READ_ONLY = "read_only"
     DESTRUCTIVE = "destructive"
     CONCURRENCY_SAFE = "concurrency_safe"
@@ -20,10 +21,8 @@ class ToolCapability(str, Enum):
 
 @dataclass
 class ToolMetadata:
-    """Tool metadata for classification and discovery.
-    
-    Inspired by Claude Code's Tool type definition.
-    """
+    """Tool metadata for classification and discovery."""
+
     name: str
     description: str
     capabilities: set[ToolCapability] = field(default_factory=set)
@@ -31,20 +30,17 @@ class ToolMetadata:
     is_enabled: bool = True
     max_result_size_chars: int = 10_000
     tags: list[str] = field(default_factory=list)
-    
+
     @property
     def is_read_only(self) -> bool:
-        """Check if tool is read-only."""
         return ToolCapability.READ_ONLY in self.capabilities
-    
+
     @property
     def is_destructive(self) -> bool:
-        """Check if tool can modify/delete data."""
         return ToolCapability.DESTRUCTIVE in self.capabilities
-    
+
     @property
     def is_concurrency_safe(self) -> bool:
-        """Check if tool is safe for concurrent execution."""
         return ToolCapability.CONCURRENCY_SAFE in self.capabilities
 
 
@@ -52,34 +48,31 @@ class ToolMetadata:
 # Tool Protocol (inspired by Claude Code's Tool interface)
 # ---------------------------------------------------------------------------
 
+
 class Tool(Protocol):
-    """Tool protocol defining a complete tool lifecycle.
-    
-    Inspired by Claude Code's Tool type which includes:
-    - call: Execution logic
-    - description: Dynamic description generation
-    - validate_input: Input validation
-    - check_permissions: Permission checking
-    - Metadata: is_read_only, is_destructive, etc.
-    """
-    
     @property
     def name(self) -> str: ...
-    
+
     @property
     def description_template(self) -> str: ...
-    
+
     def get_description(self, args: dict[str, Any], options: dict[str, Any] | None = None) -> str: ...
+
     def validate_input(self, args: dict[str, Any]) -> tuple[bool, str]: ...
-    def check_permissions(self, args: dict[str, Any], context: ToolContext) -> tuple[bool, str]: ...
+
+    def check_permissions(self, args: dict[str, Any], context: "ToolContext") -> tuple[bool, str]: ...
+
     def call(
         self,
         args: dict[str, Any],
-        context: ToolContext,
+        context: "ToolContext",
         on_progress: Callable[[dict[str, Any]], None] | None = None,
-    ) -> ToolResult: ...
+    ) -> "ToolResult": ...
+
     def is_enabled(self) -> bool: ...
+
     def is_read_only(self, args: dict[str, Any]) -> bool: ...
+
     def is_destructive(self, args: dict[str, Any]) -> bool: ...
 
 
@@ -120,6 +113,14 @@ class ToolDefinition:
     run: Runner
 
 
+@dataclass(slots=True)
+class ToolCatalog:
+    tools: list[ToolDefinition]
+    skills: list[dict[str, Any]]
+    mcp_servers: list[dict[str, Any]]
+    disposer: Callable[[], Any] | None = None
+
+
 class ToolRegistry:
     def __init__(
         self,
@@ -127,11 +128,13 @@ class ToolRegistry:
         skills: list[dict[str, Any]] | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
         disposer: Callable[[], Any] | None = None,
+        refresh_catalog: Callable[[], ToolCatalog] | None = None,
     ) -> None:
-        self._tools = tools
-        self._skills = skills or []
-        self._mcp_servers = mcp_servers or []
+        self._tools = list(tools)
+        self._skills = list(skills or [])
+        self._mcp_servers = list(mcp_servers or [])
         self._disposer = disposer
+        self._refresh_catalog = refresh_catalog
 
     def list(self) -> list[ToolDefinition]:
         return list(self._tools)
@@ -157,10 +160,21 @@ class ToolRegistry:
             parsed = tool.validator(input_data)
             return tool.run(parsed, context)
         except (KeyboardInterrupt, SystemExit):
-            # 这些异常应该向上传播，不应该被捕获
             raise
         except Exception as error:  # noqa: BLE001
             return ToolResult(ok=False, output=f"{type(tool).__name__} error: {error}")
+
+    def refresh_capabilities(self) -> None:
+        if self._refresh_catalog is None:
+            return
+        catalog = self._refresh_catalog()
+        old_disposer = self._disposer
+        self._tools = list(catalog.tools)
+        self._skills = list(catalog.skills)
+        self._mcp_servers = list(catalog.mcp_servers)
+        self._disposer = catalog.disposer
+        if old_disposer is not None and old_disposer is not catalog.disposer:
+            old_disposer()
 
     def dispose(self) -> None:
         if self._disposer is not None:

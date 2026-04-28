@@ -51,7 +51,7 @@ def project_mcp_path(cwd: str | Path | None = None) -> Path:
 def _read_json_file(file_path: Path) -> dict[str, Any]:
     if not file_path.exists():
         return {}
-    return json.loads(file_path.read_text(encoding="utf-8"))
+    return json.loads(file_path.read_text(encoding="utf-8-sig"))
 
 
 def read_settings_file(file_path: Path) -> dict[str, Any]:
@@ -112,6 +112,18 @@ def save_mini_code_settings(updates: dict[str, Any]) -> None:
         json.dumps(next_settings, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def load_pet_settings() -> dict[str, Any]:
+    settings = read_settings_file(ASTRID_SETTINGS_PATH)
+    pet = settings.get("pet", {})
+    return pet if isinstance(pet, dict) else {}
+
+
+def save_pet_settings(updates: dict[str, Any]) -> None:
+    current = load_pet_settings()
+    current.update(updates)
+    save_mini_code_settings({"pet": current})
 
 
 def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:

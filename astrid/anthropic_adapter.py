@@ -12,6 +12,7 @@ from astrid.types import AgentStep, StepDiagnostics
 DEFAULT_MAX_RETRIES = 4
 BASE_RETRY_DELAY_MS = 500
 MAX_RETRY_DELAY_MS = 8000
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 
 def _sleep(milliseconds: int) -> None:
@@ -166,9 +167,8 @@ class AnthropicModelAdapter:
                 }
                 for tool in self.tools.list()
             ],
+            "max_tokens": int(self.runtime.get("maxOutputTokens") or DEFAULT_MAX_OUTPUT_TOKENS),
         }
-        if self.runtime.get("maxOutputTokens") is not None:
-            request_body["max_tokens"] = self.runtime["maxOutputTokens"]
 
         request = urllib.request.Request(
             url=self.runtime["baseUrl"].rstrip("/") + "/v1/messages",

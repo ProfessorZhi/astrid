@@ -50,6 +50,7 @@ CTRL_CHAR_TO_NAME: dict[str, str] = {
     '\x0f': 'o',
     '\x10': 'p',
     '\x15': 'u',
+    '\x16': 'v',
 }
 
 def maybe_need_more_for_escape_sequence(chunk: str) -> bool:

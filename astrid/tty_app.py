@@ -1,4 +1,4 @@
-"""Astrid TTY Application.
+﻿"""Astrid TTY Application.
 
 This module implements the full-screen terminal user interface for Astrid,
 including:
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
+import random
 import sys
 import threading
 import time
@@ -29,6 +31,7 @@ from astrid.cli_commands import (
     find_matching_slash_commands,
     try_handle_local_command,
 )
+from astrid.config import load_pet_settings, save_pet_settings
 from astrid.cost_tracker import CostTracker
 from astrid.history import load_history_entries, save_history_entries
 from astrid.local_tool_shortcuts import parse_local_tool_shortcut
@@ -40,9 +43,11 @@ from astrid.orchestration import (
     archive_worker,
     create_runtime,
     get_phase_label,
+    get_phase_verb,
     mark_review_required,
     mark_worker_reported,
     request_spawn,
+    sample_spinner_verb,
 )
 from astrid.permissions import PermissionManager
 from astrid.prompt import build_system_prompt
@@ -70,9 +75,21 @@ from astrid.tui.chrome import (
     render_slash_menu,
     render_status_line,
     render_tool_panel,
+    render_welcome_workbench,
+    string_display_width,
     SUBTLE,
     RESET,
 )
+from astrid.tui.buddy import (
+    BUDDY_SPECIES,
+    cycle_buddy_species,
+    normalize_buddy_species,
+    render_buddy_block,
+    render_buddy_overlay,
+)
+from astrid.tui.pet_import import import_pet_sprite
+from astrid.tui.buddy_state import BuddyProfile, BuddyRuntimeState, build_buddy_profile
+from astrid.tui.welcome_hero import render_welcome_hero_profile_block
 from astrid.tui.input import render_input_prompt
 from astrid.tui.input_parser import (
     KeyEvent,
@@ -86,8 +103,11 @@ from astrid.tui.screen import (
     enter_alternate_screen,
     exit_alternate_screen,
     hide_cursor,
+    _should_capture_mouse,
+    _should_use_alternate_screen,
     show_cursor,
 )
+from astrid.tui.theme import theme
 from astrid.tui.transcript import (
     _render_transcript_lines,
     get_transcript_max_scroll_offset,
@@ -100,7 +120,7 @@ from astrid.types import ChatMessage, ModelAdapter
 from astrid.workspace import resolve_tool_path
 
 # ---------------------------------------------------------------------------
-# Terminal size — use unified cache from chrome module
+# Terminal size 鈥?use unified cache from chrome module
 # ---------------------------------------------------------------------------
 
 # Alias to the single canonical implementation in chrome.py
@@ -116,7 +136,7 @@ class _ThrottledRenderer:
 
     THREAD SAFETY: The actual render function (_render_fn) is ONLY executed on
     the thread that calls ``flush()`` or ``force()``.  ``request()`` never
-    invokes the render function directly — it only marks a pending flag.  This
+    invokes the render function directly 鈥?it only marks a pending flag.  This
     ensures that background threads (agent, collapse timer) can safely call
     ``request()`` without writing to stdout concurrently with the main UI
     thread.
@@ -135,7 +155,7 @@ class _ThrottledRenderer:
         """Mark that a rerender is needed.
 
         This method is safe to call from any thread.  It never invokes the
-        render function — the actual render happens on the next ``flush()``
+        render function 鈥?the actual render happens on the next ``flush()``
         call from the main event loop.
         """
         with self._lock:
@@ -152,7 +172,7 @@ class _ThrottledRenderer:
                 return
             elapsed = now - self._last_render_time
             if elapsed < self._min_interval:
-                return  # Still within throttle window — defer
+                return  # Still within throttle window 鈥?defer
             self._pending = False
             self._last_render_time = now
         self._render_fn()
@@ -166,6 +186,36 @@ class _ThrottledRenderer:
             self._pending = False
             self._last_render_time = time.monotonic()
         self._render_fn()
+
+
+def _busy_animation_interval(terminal_mode: str) -> float | None:
+    """Return the spinner cadence for the active terminal mode."""
+    return 0.25
+
+
+def _idle_poll_interval(terminal_mode: str) -> float:
+    """Return the main-loop idle sleep interval for the active terminal mode."""
+    return 0.05
+
+
+def _render_throttle_interval(terminal_mode: str) -> float:
+    """Return the rerender throttle interval for the active terminal mode."""
+    return 0.016
+
+
+def _should_skip_agent_frame_update(
+    transcript_ids: tuple[int, ...],
+    rendered_ids: tuple[int, ...],
+    prompt_body: str,
+    previous_prompt_body: str,
+) -> bool:
+    """Skip redundant inline redraws when nothing visible changed."""
+    return transcript_ids == rendered_ids and prompt_body == previous_prompt_body
+
+
+def _should_record_progress_entries(terminal_mode: str) -> bool:
+    """Return True when progress updates should be appended into transcript."""
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +259,7 @@ class AggregatedEditProgress:
 class ScreenState:
     input: str = ""
     cursor_offset: int = 0
+    queued_inputs: list[str] = field(default_factory=list)
     transcript: list[TranscriptEntry] = field(default_factory=list)
     transcript_scroll_offset: int = 0
     selected_slash_index: int = 0
@@ -236,6 +287,30 @@ class ScreenState:
     orchestration: OrchestratorState | None = None
     orchestration_entry_id: int | None = None
     sub_agent_manager: SubAgentManager | None = None
+    companion_enabled: bool = True
+    companion_species: str = "duck"
+    animation_frame: int = 0
+    buddy_profile: BuddyProfile | None = None
+    buddy_runtime: BuddyRuntimeState = field(default_factory=BuddyRuntimeState)
+    imported_pet_name: str | None = None
+    imported_pet_source: str | None = None
+    imported_pet_ansi: str | None = None
+    imported_pet_ascii: str | None = None
+    imported_pet_mode: str = "ansi"
+    imported_pet_active: bool = False
+    busy_verb: str = "Transfiguring"
+    current_action_summary: str | None = None
+    wheel_debug_last_direction: str | None = None
+    wheel_debug_event_count: int = 0
+    wheel_debug_fallback_active: bool = False
+    wheel_debug_fallback_hook: bool = False
+    wheel_debug_session_title: str | None = None
+    wheel_debug_foreground_title: str | None = None
+    wheel_debug_raw_callback_count: int = 0
+    wheel_debug_matched_callback_count: int = 0
+    wheel_debug_callback_foreground_title: str | None = None
+    welcome_tip_index: int = 0
+    welcome_tip_rotated_at: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -276,20 +351,248 @@ def _find_transcript_entry(state: ScreenState, entry_id: int) -> TranscriptEntry
 
 def _is_multi_agent_candidate(input_text: str) -> bool:
     lowered = input_text.lower()
-    keywords = (
+    explicit_keywords = (
         "multi-agent",
         "multi agent",
         "subagent",
         "sub-agent",
+        "parallel",
+        "orchestr",
         "并行",
         "多agent",
         "多 agent",
-        "review",
-        "orchestr",
+        "多智能体",
     )
-    if any(keyword in lowered for keyword in keywords):
+    paired_workflows = (
+        "review and implementation",
+        "search and implementation",
+        "split search and implementation",
+        "implement and review",
+        "explore and review",
+        "审查和实现",
+        "搜索和实现",
+    )
+    if any(keyword in lowered for keyword in explicit_keywords):
         return True
-    return len(input_text) >= 48
+    if any(keyword in lowered for keyword in paired_workflows):
+        return True
+    if _looks_like_single_step_execution_task(input_text):
+        return False
+    return False
+
+
+_SINGLE_AGENT_BUSY_SPINNER_FRAMES: tuple[str, ...] = ("◜", "◠", "◝", "◞", "◡", "◟")
+_SINGLE_AGENT_DEFAULT_VERB = "Transfiguring"
+_SCREEN_CLEAR = "\x1b[2J\x1b[H"
+_CURSOR_SAVE = "\x1b7"
+_CURSOR_RESTORE = "\x1b8"
+
+
+def _strip_screen_clear_prefix(frame: str) -> str:
+    if frame.startswith(_SCREEN_CLEAR):
+        return frame[len(_SCREEN_CLEAR):]
+    return frame
+
+
+def _count_rendered_lines(frame: str, width: int) -> int:
+    width = max(1, width)
+    content = _strip_screen_clear_prefix(frame)
+    if not content:
+        return 1
+
+    total = 0
+    for line in content.split("\n"):
+        display_width = string_display_width(line)
+        total += max(1, (display_width + width - 1) // width)
+    return max(1, total)
+
+
+def _render_inline_frame(frame: str, previous_line_count: int) -> str:
+    content = _strip_screen_clear_prefix(frame)
+    if previous_line_count <= 0:
+        return f"{_CURSOR_SAVE}{content}"
+    return f"{_CURSOR_RESTORE}\x1b[J{content}"
+
+
+def _render_inline_frame_update(
+    frame: str,
+    previous_line_count: int,
+    width: int,
+) -> tuple[str, int]:
+    return _render_inline_frame(frame, previous_line_count), _count_rendered_lines(frame, width)
+
+
+def _clear_prompt_region(previous_line_count: int) -> str:
+    if previous_line_count <= 0:
+        return ""
+    move_up = f"\x1b[{previous_line_count - 1}A" if previous_line_count > 1 else ""
+    return f"\r{move_up}\x1b[J"
+
+
+def _render_agent_frame_update(
+    transcript_entries: list[TranscriptEntry],
+    previous_transcript_ids: tuple[int, ...],
+    prompt_body: str,
+    previous_prompt_line_count: int,
+) -> tuple[str, tuple[int, ...], int]:
+    current_ids = tuple(entry.id for entry in transcript_entries)
+    has_prefix = (
+        len(previous_transcript_ids) <= len(current_ids)
+        and current_ids[: len(previous_transcript_ids)] == previous_transcript_ids
+    )
+    visible_entries = transcript_entries[len(previous_transcript_ids) :] if has_prefix else transcript_entries
+
+    buf = [_clear_prompt_region(previous_prompt_line_count)]
+    if visible_entries:
+        transcript_text = render_transcript_simple(visible_entries)
+        if transcript_text:
+            buf.append(transcript_text)
+            if not transcript_text.endswith("\n"):
+                buf.append("\n")
+            buf.append("\n")
+    buf.append(prompt_body)
+    return "".join(buf), current_ids, _count_text_lines(prompt_body)
+
+
+def _should_start_windows_wheel_fallback(terminal_mode: str) -> bool:
+    return terminal_mode in {"tui", "agent"}
+
+def _render_busy_spinner(frame: int) -> str:
+    spinner = _SINGLE_AGENT_BUSY_SPINNER_FRAMES[
+        frame % len(_SINGLE_AGENT_BUSY_SPINNER_FRAMES)
+    ]
+    t = theme()
+    return f"{t.progress}{t.bold}{spinner}{t.reset}"
+
+
+def _render_live_status_line(state: ScreenState) -> str | None:
+    t = theme()
+    status = state.status
+    if state.pending_approval is not None:
+        status = "Awaiting approval..."
+    elif state.is_busy and not status:
+        status = f"{state.busy_verb}..."
+    if not status:
+        return None
+    if state.is_busy or state.pending_approval is not None:
+        summary = _truncate_for_display(" ".join((state.current_action_summary or "").split()).strip(), 120)
+        if summary:
+            return (
+                f"{_render_busy_spinner(state.animation_frame)} {t.progress}{status}{t.reset} "
+                f"{t.subtle}{summary}{t.reset}"
+            )
+        return f"{_render_busy_spinner(state.animation_frame)} {t.progress}{status}{t.reset}"
+    return f"{t.subtle}{status}{t.reset}"
+
+
+def _looks_like_single_step_execution_task(input_text: str) -> bool:
+    lowered = input_text.lower()
+    direct_actions = (
+        "git clone",
+        "clone ",
+        "copy ",
+        "move ",
+        "rename ",
+        "delete ",
+        "remove ",
+        "download ",
+        "install ",
+        "run ",
+        "execute ",
+        "执行",
+        "运行",
+        "克隆",
+        "复制",
+        "移动",
+        "重命名",
+        "删除",
+        "下载",
+        "安装",
+    )
+    target_markers = (
+        "http://",
+        "https://",
+        "github.com",
+        "git@",
+        ":\\",
+        "./",
+        "../",
+        "git ",
+        "python ",
+        "pytest",
+        "npm ",
+        "pnpm ",
+        "uv ",
+        "cargo ",
+        "pip ",
+    )
+    return any(token in lowered for token in direct_actions) and any(
+        marker in lowered for marker in target_markers
+    )
+
+
+def _set_single_agent_busy_state(
+    state: ScreenState,
+    *,
+    verb: str | None = None,
+    summary: str | None = None,
+    status: str | None = None,
+) -> None:
+    state.busy_verb = verb or _SINGLE_AGENT_DEFAULT_VERB
+    state.current_action_summary = summary
+    if status is not None:
+        state.status = status
+
+
+def _summarize_progress_update(content: str) -> tuple[str, str]:
+    summary = _truncate_for_display(" ".join(content.split()).strip(), 160)
+    lowered = summary.lower()
+    if any(token in lowered for token in ("review", "validate", "check", "审查", "校验")):
+        return "Reviewing", summary
+    if any(token in lowered for token in ("search", "scan", "inspect", "read", "grep", "搜索", "扫描", "读取")):
+        return "Inspecting", summary
+    if any(token in lowered for token in ("command", "tool", "run", "execute", "命令", "工具", "执行")):
+        return "Running", summary
+    if any(token in lowered for token in ("merge", "combine", "collect", "汇总", "合并")):
+        return "Collecting", summary
+    return _SINGLE_AGENT_DEFAULT_VERB, summary
+
+
+def _render_single_agent_busy_line(state: ScreenState) -> str:
+    t = theme()
+    line = f"{_render_busy_spinner(state.animation_frame)} {t.progress}{t.bold}{state.busy_verb}{t.reset}{t.progress}...{t.reset}"
+    summary = state.current_action_summary
+    if not summary and state.status and state.status != f"{state.busy_verb}...":
+        summary = state.status
+    if summary:
+        return f"{line}\n  {t.assistant}{summary}{t.reset}"
+    return line
+
+
+def _trim_simple_transcript_for_busy_state(entries: list[TranscriptEntry], state: ScreenState) -> list[TranscriptEntry]:
+    if not _should_append_single_agent_busy_line(state):
+        return entries
+    trimmed = list(entries)
+    while trimmed and trimmed[-1].kind == "progress":
+        trimmed.pop()
+    return trimmed
+
+
+def _should_append_single_agent_busy_line(state: ScreenState) -> bool:
+    return False
+
+
+def _prune_completed_progress_entries(state: ScreenState) -> None:
+    state.transcript = [entry for entry in state.transcript if entry.kind != "progress"]
+
+
+def _get_renderable_transcript_entries(state: ScreenState) -> list[TranscriptEntry]:
+    _dedupe_welcome_entries(state)
+    return [
+        entry
+        for entry in state.transcript
+        if entry.kind not in {"progress", "welcome"}
+    ]
 
 
 def _pick_worker_name(role: WorkerRole, index: int) -> tuple[str, str]:
@@ -332,6 +635,7 @@ def _to_orchestration_workers(runtime: OrchestratorState) -> list[OrchestrationW
             status=status_map.get(worker.state, "queued"),
             colorKey=worker.color,
             latestEvent=worker.latest_event,
+            spinnerVerb=worker.spinner_verb,
         )
         for worker in runtime.workers.values()
     ]
@@ -341,6 +645,7 @@ def _sync_orchestration_entry(state: ScreenState) -> None:
     runtime = state.orchestration
     if runtime is None:
         return
+    phase_elapsed = max(0.0, time.monotonic() - runtime.phase_started_at)
 
     workers = _to_orchestration_workers(runtime)
     if state.orchestration_entry_id is None:
@@ -350,6 +655,8 @@ def _sync_orchestration_entry(state: ScreenState) -> None:
             body=runtime.narrative,
             narrativeLine=runtime.narrative,
             phaseLabel=get_phase_label(runtime.task_state),
+            phaseVerb=get_phase_verb(runtime.task_state, state.animation_frame, phase_elapsed),
+            animationFrame=state.animation_frame,
             workers=workers,
         )
         return
@@ -363,7 +670,256 @@ def _sync_orchestration_entry(state: ScreenState) -> None:
     entry.body = runtime.narrative
     entry.narrativeLine = runtime.narrative
     entry.phaseLabel = get_phase_label(runtime.task_state)
+    entry.phaseVerb = get_phase_verb(runtime.task_state, state.animation_frame, phase_elapsed)
+    entry.animationFrame = state.animation_frame
     entry.workers = workers
+    if runtime.task_state == TaskRuntimeState.DONE:
+        state.buddy_runtime.reaction_text = "Review complete"
+        state.buddy_runtime.reaction_until = time.monotonic() + 6.0
+
+
+def _set_buddy_reaction(state: ScreenState, text: str, *, duration: float = 5.0) -> None:
+    state.buddy_runtime.reaction_text = text
+    state.buddy_runtime.reaction_until = time.monotonic() + duration
+
+
+def _render_buddy_profile_summary(state: ScreenState) -> str:
+    if state.imported_pet_name and (state.imported_pet_ansi or state.imported_pet_ascii):
+        return "\n".join(
+            (
+                f"name: {state.imported_pet_name}",
+                "species: imported",
+                f"status: {'active' if state.imported_pet_active else 'draft'}",
+                f"mode: {state.imported_pet_mode}",
+                f"source: {state.imported_pet_source or 'unknown'}",
+            )
+        )
+    profile = _ensure_buddy_profile(state, state.companion_species)
+    return "\n".join(
+        (
+            f"name: {profile.soul.name}",
+            f"persona: {profile.soul.persona}",
+            f"species: {profile.bones.species}",
+            f"rarity: {profile.bones.rarity}",
+            f"eye: {profile.bones.eye}",
+            f"hat: {profile.bones.hat}",
+            f"shiny: {'yes' if profile.bones.shiny else 'no'}",
+        )
+    )
+
+
+def _persist_pet_state(state: ScreenState) -> None:
+    existing = load_pet_settings()
+    save_pet_settings(
+        {
+            "customPets": existing.get("customPets", {}),
+            "companionEnabled": state.companion_enabled,
+            "companionSpecies": state.companion_species,
+            "importedPetName": state.imported_pet_name,
+            "importedPetSource": state.imported_pet_source,
+            "importedPetAnsi": state.imported_pet_ansi,
+            "importedPetAscii": state.imported_pet_ascii,
+            "importedPetMode": state.imported_pet_mode,
+            "importedPetActive": state.imported_pet_active,
+        }
+    )
+
+
+def _load_custom_pet_library() -> dict[str, dict[str, str]]:
+    pet_settings = load_pet_settings()
+    custom = pet_settings.get("customPets", {})
+    return custom if isinstance(custom, dict) else {}
+
+
+def _save_custom_pet_library(custom_pets: dict[str, dict[str, str]]) -> None:
+    save_pet_settings({"customPets": custom_pets})
+
+
+def _apply_startup_pet_state(state: ScreenState) -> None:
+    pet_settings = load_pet_settings()
+    state.companion_enabled = bool(pet_settings.get("companionEnabled", state.companion_enabled))
+
+    state.imported_pet_name = pet_settings.get("importedPetName")
+    state.imported_pet_source = pet_settings.get("importedPetSource")
+    state.imported_pet_ansi = pet_settings.get("importedPetAnsi")
+    state.imported_pet_ascii = pet_settings.get("importedPetAscii")
+    if pet_settings.get("importedPetMode") in {"ansi", "ascii"}:
+        state.imported_pet_mode = str(pet_settings["importedPetMode"])
+    state.imported_pet_active = bool(pet_settings.get("importedPetActive", False))
+
+    if state.imported_pet_active:
+        if pet_settings.get("companionSpecies"):
+            state.companion_species = normalize_buddy_species(str(pet_settings["companionSpecies"]))
+        return
+
+    state.companion_species = random.choice(BUDDY_SPECIES)
+
+
+def _render_welcome_pet_block(state: ScreenState, profile: BuddyProfile) -> str:
+    if state.imported_pet_active and state.imported_pet_name:
+        sprite = state.imported_pet_ansi if state.imported_pet_mode == "ansi" else state.imported_pet_ascii
+        if sprite:
+            return "\n".join(
+                (
+                    sprite,
+                    f"{state.imported_pet_name} imported pet",
+                    f"mode {state.imported_pet_mode} · source {state.imported_pet_source or 'unknown'}",
+                )
+            )
+    return render_welcome_hero_profile_block(profile, state.buddy_runtime, state.animation_frame)
+
+
+def _handle_companion_command(state: ScreenState, input_text: str) -> str | None:
+    if input_text == "/pet":
+        return "Usage: /pet show | /pet hide | /pet next | /pet switch <species> | /pet list | /pet pet | /pet profile | /pet import <path-or-url> [--ascii|--ansi] | /pet mode <ascii|ansi> | /pet save <name> | /pet use <name> | /pet remove <name>"
+
+    if input_text == "/pet show" or input_text == "/pet summon":
+        state.companion_enabled = True
+        _set_buddy_reaction(state, "Welcome back", duration=6.0)
+        state.buddy_runtime.summoned_until = time.monotonic() + 4.0
+        _persist_pet_state(state)
+        profile = _ensure_buddy_profile(state, state.companion_species)
+        return _render_welcome_pet_block(state, profile)
+
+    if input_text == "/pet hide":
+        state.companion_enabled = False
+        _persist_pet_state(state)
+        return "Buddy hidden from the welcome screen."
+
+    if input_text == "/pet next":
+        state.companion_species = cycle_buddy_species(state.companion_species, 1)
+        state.companion_enabled = True
+        state.imported_pet_active = False
+        if state.buddy_profile is not None:
+            state.buddy_profile = build_buddy_profile(f"{state.buddy_profile.soul.name}:{state.companion_species}")
+        _persist_pet_state(state)
+        return render_buddy_block(state.companion_species, state.animation_frame)
+
+    if input_text.startswith("/pet switch "):
+        requested = input_text[len("/pet switch "):].strip().lower()
+        if requested not in BUDDY_SPECIES:
+            return (
+                f"Unknown buddy '{requested}'.\n"
+                f"Available buddies: {', '.join(BUDDY_SPECIES)}"
+            )
+        species = normalize_buddy_species(requested)
+        state.companion_species = species
+        state.companion_enabled = True
+        state.imported_pet_active = False
+        if state.buddy_profile is not None:
+            state.buddy_profile = build_buddy_profile(f"{state.buddy_profile.soul.name}:{species}")
+        _persist_pet_state(state)
+        return render_buddy_block(state.companion_species, state.animation_frame)
+
+    if input_text == "/pet list":
+        custom = _load_custom_pet_library()
+        lines = ["Built-in buddies:", ", ".join(BUDDY_SPECIES)]
+        if custom:
+            lines.extend(["", "Custom preset pets:", ", ".join(sorted(custom.keys()))])
+        return "\n".join(lines)
+
+    if input_text == "/pet pet":
+        _set_buddy_reaction(state, "Much appreciated")
+        state.buddy_runtime.pet_until = time.monotonic() + 2.5
+        return "Buddy perks up with a shower of hearts."
+
+    if input_text == "/pet profile":
+        return _render_buddy_profile_summary(state)
+
+    if input_text.startswith("/pet mode "):
+        mode = input_text[len("/pet mode "):].strip().lower()
+        if mode not in {"ansi", "ascii"}:
+            return "Usage: /pet mode <ansi|ascii>"
+        state.imported_pet_mode = mode
+        _persist_pet_state(state)
+        return f"Imported pet render mode set to {mode}."
+
+    if input_text.startswith("/pet save "):
+        pet_name = input_text[len("/pet save "):].strip()
+        if not pet_name:
+            return "Usage: /pet save <name>"
+        if not state.imported_pet_name or not (state.imported_pet_ansi or state.imported_pet_ascii):
+            return "No imported pet is active. Use /pet import <path-or-url> first."
+        custom = _load_custom_pet_library()
+        custom[pet_name] = {
+            "source": state.imported_pet_source or "",
+            "ansi": state.imported_pet_ansi or "",
+            "ascii": state.imported_pet_ascii or "",
+        }
+        _save_custom_pet_library(custom)
+        state.imported_pet_name = pet_name
+        state.imported_pet_active = False
+        _persist_pet_state(state)
+        return f"Saved imported pet as preset '{pet_name}'."
+
+    if input_text.startswith("/pet use "):
+        pet_name = input_text[len("/pet use "):].strip()
+        if not pet_name:
+            return "Usage: /pet use <name>"
+        custom = _load_custom_pet_library()
+        pet = custom.get(pet_name)
+        if not pet:
+            return f"Unknown preset pet '{pet_name}'. Use /pet list to see saved pets."
+        state.imported_pet_name = pet_name
+        state.imported_pet_source = str(pet.get("source", ""))
+        state.imported_pet_ansi = str(pet.get("ansi", ""))
+        state.imported_pet_ascii = str(pet.get("ascii", ""))
+        state.imported_pet_active = True
+        state.companion_enabled = True
+        _set_buddy_reaction(state, f"{pet_name} is back", duration=6.0)
+        _persist_pet_state(state)
+        return (
+            (state.imported_pet_ansi if state.imported_pet_mode == "ansi" else state.imported_pet_ascii)
+            + f"\n{pet_name} preset pet"
+        )
+
+    if input_text.startswith("/pet remove "):
+        pet_name = input_text[len("/pet remove "):].strip()
+        if not pet_name:
+            return "Usage: /pet remove <name>"
+        custom = _load_custom_pet_library()
+        if pet_name not in custom:
+            return f"Unknown preset pet '{pet_name}'."
+        del custom[pet_name]
+        _save_custom_pet_library(custom)
+        if state.imported_pet_name == pet_name:
+            state.imported_pet_name = None
+            state.imported_pet_source = None
+            state.imported_pet_ansi = None
+            state.imported_pet_ascii = None
+            state.imported_pet_active = False
+            _persist_pet_state(state)
+        return f"Removed preset pet '{pet_name}'."
+
+    if input_text.startswith("/pet import "):
+        raw = input_text[len("/pet import "):].strip()
+        mode = "ansi"
+        if raw.endswith(" --ascii"):
+            mode = "ascii"
+            raw = raw[: -len(" --ascii")].strip()
+        elif raw.endswith(" --ansi"):
+            raw = raw[: -len(" --ansi")].strip()
+        if not raw:
+            return "Usage: /pet import <path-or-url> [--ascii|--ansi]"
+        try:
+            imported = import_pet_sprite(raw)
+        except Exception as exc:  # noqa: BLE001
+            return f"Failed to import pet: {exc}"
+        state.imported_pet_name = imported.name
+        state.imported_pet_source = imported.source
+        state.imported_pet_ansi = imported.ansi_sprite
+        state.imported_pet_ascii = imported.ascii_sprite
+        state.imported_pet_mode = mode
+        state.imported_pet_active = False
+        state.companion_enabled = True
+        state.buddy_runtime.reaction_text = None
+        state.buddy_runtime.reaction_until = 0.0
+        return (
+            (imported.ansi_sprite if mode == "ansi" else imported.ascii_sprite)
+            + f"\n{imported.name} imported pet draft\nUse /pet save <name> to keep it or /pet use <name> after saving."
+        )
+
+    return None
 
 
 def _set_worker_state(
@@ -379,6 +935,10 @@ def _set_worker_state(
     worker = runtime.workers[worker_id]
     if status is not None:
         worker.state = status
+        if status == WorkerRuntimeState.RUNNING and not worker.spinner_verb:
+            worker.spinner_verb = sample_spinner_verb(runtime.task_state, worker.name)
+        if status == WorkerRuntimeState.RUNNING:
+            _set_buddy_reaction(state, f"{worker.name} is on it", duration=4.0)
     if latest_event is not None:
         worker.latest_event = latest_event
     _sync_orchestration_entry(state)
@@ -387,6 +947,8 @@ def _set_worker_state(
 def _begin_orchestration(state: ScreenState, input_text: str) -> OrchestratorState:
     state.orchestration = create_runtime(input_text)
     state.orchestration_entry_id = None
+    state.animation_frame = 0
+    _set_buddy_reaction(state, "Crew assembling", duration=5.0)
     request_spawn(state.orchestration)
     _sync_orchestration_entry(state)
     state.status = state.orchestration.narrative
@@ -513,17 +1075,31 @@ def _schedule_tool_auto_collapse(
 
 
 def _get_contextual_help(state: ScreenState, args: TtyAppArgs) -> str | None:
-    """根据当前状态提供上下文相关的帮助提示（纯文本，不含 emoji）。"""
+    """Return a contextual help hint for busy or approval states."""
     if not state.is_busy and not state.pending_approval:
-        return None  # 保持状态栏简洁
-
+        return None  # 淇濇寔鐘舵€佹爮绠€娲?
     if state.is_busy and state.active_tool:
         return f"Running {state.active_tool}... (Ctrl+C to cancel)"
-
     if state.pending_approval:
         return "Approval required. Use arrow keys and Enter to choose."
 
     return None
+
+
+def _terminal_mode_label() -> str:
+    mode = os.environ.get("ASTRID_TERMINAL_MODE", "").strip().lower()
+    if mode == "shell":
+        return "shell mode"
+    return "tui mode"
+
+
+def _terminal_mode_hint() -> str:
+    label = _terminal_mode_label()
+    if label == "shell mode":
+        return "Mode: shell. PowerShell keeps native scrollback. Use astrid --tui for full-screen UI."
+    if label == "inline mode":
+        return "Mode: inline. Astrid owns transcript scrolling in the main screen without using the alt screen."
+    return "Mode: tui. Astrid owns the screen and scroll. Use astrid for shell mode on Windows."
 
 
 # ---------------------------------------------------------------------------
@@ -590,9 +1166,23 @@ _FOOTER_LINES = 1
 _chrome_overhead_cache: dict[str, tuple[tuple, int]] = {}
 
 
-def _count_rendered_lines(s: str) -> int:
+def _count_text_lines(s: str) -> int:
     """Count screen lines in a rendered string (split on \\n)."""
     return s.count("\n") + 1
+
+
+def _split_rendered_lines(block: str) -> list[str]:
+    if block == "":
+        return []
+    return block.split("\n")
+
+
+_SIMPLE_LEFT_GUTTER = " "
+
+
+def _apply_simple_left_gutter(lines: list[str], gutter: str = _SIMPLE_LEFT_GUTTER) -> list[str]:
+    """Add a one-column safety gutter for embedded terminals that clip column 0."""
+    return [f"{gutter}{line}" if line else "" for line in lines]
 
 
 def _get_chrome_overhead(args: TtyAppArgs, state: ScreenState) -> int:
@@ -603,7 +1193,7 @@ def _get_chrome_overhead(args: TtyAppArgs, state: ScreenState) -> int:
     """
     compact = _is_compact_terminal()
     # sep "\n\n" adds 2 blank lines between panels; "\n" adds 1.
-    # There are 2 separators (header→transcript, transcript→prompt).
+    # There are 2 separators (header鈫抰ranscript, transcript鈫抪rompt).
     gaps = 2 if compact else 4
     cache_key = (
         args.cwd,
@@ -616,8 +1206,8 @@ def _get_chrome_overhead(args: TtyAppArgs, state: ScreenState) -> int:
     if cached is not None and cached[0] == cache_key:
         return cached[1]
 
-    header_lines = _count_rendered_lines(_render_header_panel(args, state))
-    prompt_lines = _count_rendered_lines(_render_prompt_panel(state))
+    header_lines = _count_text_lines(_render_header_panel(args, state))
+    prompt_lines = _count_text_lines(_render_prompt_panel(state))
     overhead = header_lines + prompt_lines + _FOOTER_LINES + gaps
     _chrome_overhead_cache["key"] = (cache_key, overhead)
     return overhead
@@ -634,9 +1224,10 @@ def _get_transcript_body_lines(args: TtyAppArgs, state: ScreenState) -> int:
 
 
 def _get_max_transcript_scroll_offset(args: TtyAppArgs, state: ScreenState) -> int:
-    return get_transcript_max_scroll_offset(
-        state.transcript, _get_transcript_body_lines(args, state)
-    )
+    _, rows = _get_terminal_size()
+    document = _build_simple_page_flow_document(args, state, include_scroll_hint=False)
+    total_lines = len(_split_rendered_lines(document))
+    return max(0, total_lines - max(8, rows))
 
 
 def _scroll_transcript_by(args: TtyAppArgs, state: ScreenState, delta: int) -> bool:
@@ -645,6 +1236,119 @@ def _scroll_transcript_by(args: TtyAppArgs, state: ScreenState, delta: int) -> b
     if next_offset == state.transcript_scroll_offset:
         return False
     state.transcript_scroll_offset = next_offset
+    return True
+
+
+def _build_simple_prompt_body(state: ScreenState) -> str:
+    compact = _is_compact_terminal()
+    commands = _get_visible_commands(state.input)
+    prompt_body = render_input_prompt(state.input, state.cursor_offset, compact=compact)
+    if commands:
+        prompt_body += "\n" + render_slash_menu(
+            commands,
+            min(state.selected_slash_index, len(commands) - 1),
+        )
+    queued_preview = _render_queued_turn_preview(state)
+    if queued_preview:
+        prompt_body += "\n" + queued_preview
+    return prompt_body
+
+
+def _get_simple_footer_status(state: ScreenState) -> str | None:
+    return None if _should_append_single_agent_busy_line(state) else _render_live_status_line(state)
+
+
+def _render_queued_turn_preview(state: ScreenState) -> str:
+    if not state.queued_inputs:
+        return ""
+    preview = _truncate_for_display(" ".join(state.queued_inputs[0].split()).strip(), 96)
+    suffix = f" (+{len(state.queued_inputs) - 1})" if len(state.queued_inputs) > 1 else ""
+    return f"{SUBTLE}next turn:{RESET} {preview}{SUBTLE}{suffix}{RESET}"
+
+
+def _build_simple_page_flow_document(
+    args: TtyAppArgs,
+    state: ScreenState,
+    *,
+    include_scroll_hint: bool,
+) -> str:
+    parts: list[str] = []
+    _sync_welcome_transcript_entry(args, state)
+    welcome_entry = _find_welcome_entry(state)
+    has_welcome = welcome_entry is not None
+    if welcome_entry is not None:
+        parts.extend(_split_rendered_lines(welcome_entry.body))
+        parts.append("")
+
+    transcript_snapshot = _get_renderable_transcript_entries(state)
+    if transcript_snapshot:
+        simple_transcript = _trim_simple_transcript_for_busy_state(transcript_snapshot, state)
+        if simple_transcript:
+            parts.extend(_split_rendered_lines(render_transcript_simple(simple_transcript)))
+        profile = _ensure_buddy_profile(state, args.cwd)
+        overlay = render_buddy_overlay(profile, state.buddy_runtime)
+        if overlay:
+            if parts and parts[-1] != "":
+                parts.append("")
+            parts.extend(_split_rendered_lines(overlay))
+    elif _should_append_single_agent_busy_line(state):
+        parts.extend(_split_rendered_lines(_render_single_agent_busy_line(state)))
+    elif not has_welcome and state.companion_enabled:
+        parts.extend(
+            _split_rendered_lines(
+                f"{render_status_line(None)}\n\n"
+                f"{render_buddy_block(state.companion_species, state.animation_frame)}\n\n"
+                "Type a message or /help for commands."
+            )
+        )
+    elif not has_welcome:
+        parts.extend(_split_rendered_lines(f"{render_status_line(None)}\n\nType /help for commands."))
+
+    if include_scroll_hint and state.transcript_scroll_offset > 0:
+        max_offset = _get_max_transcript_scroll_offset(args, state)
+        parts.append(f"{SUBTLE}── scroll {state.transcript_scroll_offset}/{max_offset} (PgUp/PgDn or scroll)──{RESET}")
+
+    if parts and parts[-1] != "":
+        parts.append("")
+    parts.extend(_split_rendered_lines(_build_simple_prompt_body(state)))
+
+    footer_status = _get_simple_footer_status(state)
+    if footer_status:
+        parts.append("")
+        parts.extend(_split_rendered_lines(footer_status))
+
+    return "\n".join(_apply_simple_left_gutter(parts))
+
+
+def _build_agent_prompt_region(state: ScreenState) -> str:
+    prompt_body = _build_simple_prompt_body(state)
+    if _should_append_single_agent_busy_line(state):
+        return f"{_render_single_agent_busy_line(state)}\n\n{prompt_body}"
+    footer_status = _get_simple_footer_status(state)
+    if not footer_status:
+        return prompt_body
+    return f"{prompt_body}\n\n{footer_status}"
+
+
+def _enqueue_next_turn(state: ScreenState, input_text: str) -> bool:
+    queued_text = input_text.strip()
+    if not queued_text:
+        return False
+    state.queued_inputs.append(queued_text)
+    state.status = f"Queued next turn ({len(state.queued_inputs)})"
+    return True
+
+
+def _drain_next_queued_turn(
+    args: TtyAppArgs,
+    state: ScreenState,
+    rerender: Callable[[], None],
+) -> bool:
+    if state.is_busy or not state.queued_inputs:
+        return False
+    next_input = state.queued_inputs.pop(0)
+    if _handle_input(args, state, rerender, submitted_raw_input=next_input):
+        raise SystemExit(0)
     return True
 
 
@@ -722,7 +1426,7 @@ def _get_visible_commands(input_text: str) -> list[Any]:
 
 
 # ---------------------------------------------------------------------------
-# Rendering — cached header & footer
+# Rendering 鈥?cached header & footer
 # ---------------------------------------------------------------------------
 
 # Banner cache: the banner rarely changes (only when cwd, model, or stats change).
@@ -747,6 +1451,10 @@ def _render_header_panel(args: TtyAppArgs, state: ScreenState) -> str:
     """
     stats = _get_session_stats(args, state)
     compact = _is_compact_terminal()
+    show_companion = state.companion_enabled and not state.transcript
+    companion_preview = (
+        render_buddy_block(state.companion_species, state.animation_frame) if show_companion else None
+    )
     cache_key = (
         args.cwd,
         id(args.runtime),
@@ -756,6 +1464,9 @@ def _render_header_panel(args: TtyAppArgs, state: ScreenState) -> str:
         stats.get("mcpCount"),
         _cached_terminal_size(),
         compact,
+        state.companion_enabled,
+        state.companion_species,
+        bool(companion_preview),
     )
     cached = _banner_cache.get("key")
     if cached and cached[0] == cache_key:
@@ -766,6 +1477,7 @@ def _render_header_panel(args: TtyAppArgs, state: ScreenState) -> str:
         args.permissions.get_summary(),
         stats,
         compact=compact,
+        companion_preview=companion_preview,
     )
     _banner_cache["key"] = (cache_key, result)
     return result
@@ -812,24 +1524,114 @@ def _render_prompt_panel(state: ScreenState) -> str:
     return render_panel("prompt", prompt_body)
 
 
+def _ensure_buddy_profile(state: ScreenState, seed: str) -> BuddyProfile:
+    if state.buddy_profile is None or state.buddy_profile.bones.species != state.companion_species:
+        state.buddy_profile = build_buddy_profile(
+            f"{seed}:{state.companion_species}",
+            species_override=state.companion_species,
+        )
+    return state.buddy_profile
+
+
+
+def _find_welcome_entry(state: ScreenState) -> TranscriptEntry | None:
+    for entry in state.transcript:
+        if entry.kind == "welcome":
+            return entry
+    return None
+
+
+def _dedupe_welcome_entries(state: ScreenState) -> None:
+    seen_welcome = False
+    deduped: list[TranscriptEntry] = []
+    for entry in state.transcript:
+        if entry.kind == "welcome":
+            if seen_welcome:
+                continue
+            seen_welcome = True
+        deduped.append(entry)
+    state.transcript = deduped
+
+
+def _drop_welcome_entries(state: ScreenState) -> None:
+    state.transcript = [entry for entry in state.transcript if entry.kind != "welcome"]
+
+
+def _has_non_welcome_transcript_entries(state: ScreenState) -> bool:
+    return any(entry.kind != "welcome" for entry in state.transcript)
+
+
+def _sync_welcome_transcript_entry(args: TtyAppArgs, state: ScreenState) -> None:
+    _dedupe_welcome_entries(state)
+    width, _ = _get_terminal_size()
+    welcome_body = _build_welcome_workbench(
+        args,
+        state,
+        width=max(40, width - len(_SIMPLE_LEFT_GUTTER)),
+    )
+    entry = _find_welcome_entry(state)
+    if entry is not None:
+        entry.body = welcome_body
+        return
+
+    entry_id = state.next_entry_id
+    state.next_entry_id += 1
+    state.transcript.insert(0, TranscriptEntry(id=entry_id, kind="welcome", body=welcome_body))
+
+
+def _build_welcome_workbench(args: TtyAppArgs, state: ScreenState, *, width: int) -> str:
+    model_name = (
+        str(args.runtime.get("model"))
+        if isinstance(args.runtime, dict) and args.runtime.get("model")
+        else (getattr(args.model, "__class__", None).__name__ if args.model else "unknown")
+    )
+    tip_cycle = (
+        "Run /pet next to switch buddies",
+        "Try a multi-agent prompt to watch orchestration",
+        "Use /help to browse commands",
+    )
+    if state.welcome_tip_rotated_at <= 0.0:
+        state.welcome_tip_rotated_at = time.monotonic()
+    profile = _ensure_buddy_profile(state, args.cwd)
+    buddy_block = (
+        _render_welcome_pet_block(state, profile)
+        if state.companion_enabled
+        else "Buddy hidden\nUse /pet show to bring it back."
+    )
+    recent_items = [item for item in reversed(state.history[-3:])] if state.history else []
+    if not recent_items:
+        recent_items = ["No recent activity yet"]
+    return render_welcome_workbench(
+        app_name="codingagent x astrid",
+        version=f"welcome · {_terminal_mode_label()}",
+        model_name=model_name,
+        workspace=args.cwd,
+        buddy_block=buddy_block,
+        tips=[
+            "Type a message to start working",
+            tip_cycle[state.welcome_tip_index % len(tip_cycle)],
+            "Use /pet switch <species> to browse built-in buddies",
+        ],
+        recent_items=recent_items,
+        width=width,
+    )
+
+
 def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
+    if not _has_non_welcome_transcript_entries(state):
+        _sync_welcome_transcript_entry(args, state)
     background_tasks = list_background_tasks()
     compact = _is_compact_terminal()
     sep = "\n" if compact else "\n\n"
 
-    # Build the entire frame into a buffer, then write once
     buf: list[str] = []
-    # CSI H + CSI J  (cursor home + erase to end) – avoids full clear flicker
-    buf.append("\x1b[H\x1b[J")
-
-    # Header
+    buf.append(_SCREEN_CLEAR)
     buf.append(_render_header_panel(args, state))
     buf.append(sep)
 
     has_skills = len(args.tools.get_skills()) > 0
 
     if state.pending_approval:
-        # Permission approval overlay
         buf.append(
             render_permission_prompt(
                 state.pending_approval.request,
@@ -848,20 +1650,19 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
             )
         )
         buf.append(sep)
-        buf.append(_render_footer_cached(state.status, True, has_skills, background_tasks))
+        buf.append(_render_footer_cached(_render_live_status_line(state), True, has_skills, background_tasks))
         sys.stdout.write("".join(buf))
         sys.stdout.flush()
         return
 
-    # Transcript — snapshot the list to avoid IndexError from concurrent
-    # agent-thread appends (CPython GIL makes list.append atomic but
-    # iteration + append can still race on length vs slot access).
-    transcript_snapshot = list(state.transcript)
+    transcript_snapshot = _get_renderable_transcript_entries(state)
     body_lines = _get_transcript_body_lines(args, state)
     if transcript_snapshot:
         transcript_body = render_transcript(
             transcript_snapshot, state.transcript_scroll_offset, body_lines
         )
+        if _should_append_single_agent_busy_line(state):
+            transcript_body = f"{transcript_body}\n\n{_render_single_agent_busy_line(state)}"
     else:
         transcript_body = f"{render_status_line(None)}\n\nType /help for commands."
     buf.append(
@@ -872,16 +1673,16 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
             min_body_lines=body_lines,
         )
     )
+    profile = _ensure_buddy_profile(state, args.cwd)
+    overlay = render_buddy_overlay(profile, state.buddy_runtime)
+    if overlay:
+        buf.append(sep)
+        buf.append(render_panel("buddy", overlay))
     buf.append(sep)
-
-    # Prompt
     buf.append(_render_prompt_panel(state))
     buf.append(sep)
+    buf.append(_render_footer_cached(_render_live_status_line(state), True, has_skills, background_tasks))
 
-    # Footer (cached)
-    buf.append(_render_footer_cached(state.status, True, has_skills, background_tasks))
-
-    # Contextual hint (only when busy or awaiting approval — no idle spam)
     contextual_help = _get_contextual_help(state, args)
     if contextual_help:
         buf.append(f"\n{SUBTLE}{contextual_help}{RESET}")
@@ -890,50 +1691,25 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
     sys.stdout.flush()
 
 
+def _build_screen_simple(args: TtyAppArgs, state: ScreenState) -> str:
+    _, rows = _get_terminal_size()
+    rows = max(8, rows)
+    document = _build_simple_page_flow_document(
+        args,
+        state,
+        include_scroll_hint=state.transcript_scroll_offset > 0,
+    )
+    lines = _split_rendered_lines(document)
+    max_offset = max(0, len(lines) - rows)
+    offset = max(0, min(state.transcript_scroll_offset, max_offset))
+    end = len(lines) - offset
+    start = max(0, end - rows)
+    visible = lines[start:end]
+    return _SCREEN_CLEAR + "\n".join(visible)
+
+
 def _render_screen_simple(args: TtyAppArgs, state: ScreenState) -> None:
-    """Simple screen rendering like Claude Code - no panels, direct terminal output.
-
-    This is a cleaner UI that outputs messages directly without panel borders,
-    similar to how Claude Code works natively in the terminal.
-    """
-    buf: list[str] = []
-
-    # CSI H + CSI J  (cursor home + erase to end)
-    buf.append("\x1b[H\x1b[J")
-
-    # Simple header: just workspace info
-    buf.append(f"{SUBTLE}Workspace{RESET}\n")
-    buf.append(f"{SUBTLE}──{'─' * 60}{RESET}\n")
-    # Extract basename from cwd for display
-    import os
-    cwd_name = os.path.basename(args.cwd) or args.cwd
-    buf.append(f" project {cwd_name}")
-    model_name = getattr(args.model, '__class__', None).__name__ if args.model else 'unknown'
-    buf.append(f"  model {model_name}")
-    if state.session:
-        msg_count = len(args.messages)
-        buf.append(f"  msgs {msg_count}")
-    buf.append("\n\n")
-
-    # Transcript in simple format
-    transcript_snapshot = list(state.transcript)
-    if transcript_snapshot:
-        transcript_body = render_transcript_simple(transcript_snapshot)
-        buf.append(transcript_body)
-        buf.append("\n\n")
-
-    # Simple prompt
-    compact = _is_compact_terminal()
-    commands = _get_visible_commands(state.input)
-    prompt_body = render_input_prompt(state.input, state.cursor_offset, compact=compact)
-    if commands:
-        prompt_body += "\n" + render_slash_menu(
-            commands,
-            min(state.selected_slash_index, len(commands) - 1),
-        )
-    buf.append(prompt_body)
-
-    sys.stdout.write("".join(buf))
+    sys.stdout.write(_build_screen_simple(args, state))
     sys.stdout.flush()
 
 
@@ -941,7 +1717,7 @@ def _render_screen_simple(args: TtyAppArgs, state: ScreenState) -> None:
 # Cross-platform raw mode stdin
 # ---------------------------------------------------------------------------
 
-# Windows msvcrt scan-code → ANSI escape sequence mapping.
+# Windows msvcrt scan-code 鈫?ANSI escape sequence mapping.
 # msvcrt.getwch() returns a two-char sequence for special keys:
 #   prefix ('\x00' or '\xe0') + scan-code byte.
 # We translate these to the ANSI sequences that input_parser.py already
@@ -969,6 +1745,485 @@ _WIN_SCANCODE_TO_ANSI: dict[int, str] = {
     115: "\x1b[1;5D",  # Ctrl+Left
 }
 
+_WIN_INPUT_EVENT_KEY = 0x0001
+_WIN_INPUT_EVENT_MOUSE = 0x0002
+_WIN_MOUSE_WHEELED = 0x0004
+_WIN_FILE_TYPE_PIPE = 0x0003
+_WIN_ENABLE_MOUSE_INPUT = 0x0010
+_WIN_ENABLE_QUICK_EDIT_MODE = 0x0040
+_WIN_ENABLE_EXTENDED_FLAGS = 0x0080
+_WIN_ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+_WIN_WH_MOUSE_LL = 14
+_WIN_WM_MOUSEWHEEL = 0x020A
+_WIN_WM_QUIT = 0x0012
+
+
+def _win_build_input_mode(base_mode: int) -> int:
+    mode = base_mode | _WIN_ENABLE_EXTENDED_FLAGS | _WIN_ENABLE_VIRTUAL_TERMINAL_INPUT
+    if _should_capture_mouse():
+        mode |= _WIN_ENABLE_MOUSE_INPUT
+        mode &= ~_WIN_ENABLE_QUICK_EDIT_MODE
+    return mode
+
+
+def _win_build_mouse_fallback_title(base_title: str, pid: int | None = None) -> str:
+    label = base_title.strip() or "Astrid"
+    return f"{label} [astrid-wheel:{os.getpid() if pid is None else pid}]"
+
+
+def _win_extract_mouse_fallback_marker(title: str | None) -> str | None:
+    if not title:
+        return None
+    import re
+
+    match = re.search(r"\[astrid-wheel:\d+\]", title, flags=re.IGNORECASE)
+    return match.group(0).casefold() if match else None
+
+
+def _win_titles_match(expected_title: str | None, foreground_title: str | None) -> bool:
+    expected = " ".join((expected_title or "").split()).casefold()
+    actual = " ".join((foreground_title or "").split()).casefold()
+    if not expected or not actual:
+        return False
+    expected_marker = _win_extract_mouse_fallback_marker(expected_title)
+    actual_marker = _win_extract_mouse_fallback_marker(foreground_title)
+    if expected_marker and actual_marker and expected_marker == actual_marker:
+        return True
+    return expected in actual or actual in expected
+
+
+def _win_drain_mouse_fallback_events(
+    pending: queue.SimpleQueue[WheelEvent] | None,
+) -> list[WheelEvent]:
+    events: list[WheelEvent] = []
+    if pending is None:
+        return events
+    while True:
+        try:
+            events.append(pending.get_nowait())
+        except queue.Empty:
+            return events
+
+
+def _win_call_next_hook_ex(user32: Any, n_code: int, w_param: int, l_param: int) -> int:
+    return int(user32.CallNextHookEx(None, n_code, w_param, l_param))
+
+
+def _win_translate_console_mouse_event(event_flags: int, button_state: int) -> WheelEvent | None:
+    if event_flags != _WIN_MOUSE_WHEELED:
+        return None
+    import ctypes
+
+    delta = ctypes.c_short((button_state >> 16) & 0xFFFF).value
+    if delta > 0:
+        return WheelEvent(direction="up")
+    if delta < 0:
+        return WheelEvent(direction="down")
+    return None
+
+
+def _win_try_read_console_event() -> ParsedInputEvent | bool | None:
+    """Read a non-key Windows console event when one is pending."""
+    if sys.platform != "win32":
+        return None
+
+    try:
+        import ctypes
+        import ctypes.wintypes as wintypes
+
+        class _COORD(ctypes.Structure):
+            _fields_ = [("X", wintypes.SHORT), ("Y", wintypes.SHORT)]
+
+        class _MOUSE_EVENT_RECORD(ctypes.Structure):
+            _fields_ = [
+                ("dwMousePosition", _COORD),
+                ("dwButtonState", wintypes.DWORD),
+                ("dwControlKeyState", wintypes.DWORD),
+                ("dwEventFlags", wintypes.DWORD),
+            ]
+
+        class _KEY_EVENT_RECORD(ctypes.Structure):
+            _fields_ = [
+                ("bKeyDown", wintypes.BOOL),
+                ("wRepeatCount", wintypes.WORD),
+                ("wVirtualKeyCode", wintypes.WORD),
+                ("wVirtualScanCode", wintypes.WORD),
+                ("uChar", wintypes.WCHAR),
+                ("dwControlKeyState", wintypes.DWORD),
+            ]
+
+        class _EVENT_UNION(ctypes.Union):
+            _fields_ = [
+                ("KeyEvent", _KEY_EVENT_RECORD),
+                ("MouseEvent", _MOUSE_EVENT_RECORD),
+            ]
+
+        class _INPUT_RECORD(ctypes.Structure):
+            _fields_ = [("EventType", wintypes.WORD), ("Event", _EVENT_UNION)]
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-10)
+        if handle in (0, -1):
+            return None
+
+        available = wintypes.DWORD()
+        if not kernel32.GetNumberOfConsoleInputEvents(handle, ctypes.byref(available)):
+            return None
+        if available.value == 0:
+            return None
+
+        record = _INPUT_RECORD()
+        count = wintypes.DWORD()
+        if not kernel32.PeekConsoleInputW(handle, ctypes.byref(record), 1, ctypes.byref(count)):
+            return None
+        if count.value == 0:
+            return None
+        if record.EventType == _WIN_INPUT_EVENT_KEY:
+            return None
+
+        if not kernel32.ReadConsoleInputW(handle, ctypes.byref(record), 1, ctypes.byref(count)):
+            return None
+        if count.value == 0:
+            return None
+
+        if record.EventType == _WIN_INPUT_EVENT_MOUSE:
+            wheel = _win_translate_console_mouse_event(
+                record.Event.MouseEvent.dwEventFlags,
+                record.Event.MouseEvent.dwButtonState,
+            )
+            return wheel if wheel is not None else False
+
+        return False
+    except Exception:
+        return None
+
+
+def _win_read_pipe_chunk() -> str | None:
+    """Read available stdin bytes on Windows when running under a VT pipe/ConPTY.
+
+    Returns:
+    - decoded text when bytes were available
+    - "" when stdin is a pipe but no bytes are currently available
+    - None when stdin is not a pipe or probing failed
+    """
+    if sys.platform != "win32":
+        return None
+
+    try:
+        import ctypes
+        import ctypes.wintypes as wintypes
+        import msvcrt
+
+        fd = sys.stdin.fileno()
+        handle = msvcrt.get_osfhandle(fd)
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        if kernel32.GetFileType(handle) != _WIN_FILE_TYPE_PIPE:
+            return None
+
+        available = wintypes.DWORD()
+        if not kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
+            return None
+        if available.value == 0:
+            return ""
+
+        raw = os.read(fd, available.value)
+        while True:
+            if not kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
+                break
+            if available.value == 0:
+                break
+            more = os.read(fd, available.value)
+            if not more:
+                break
+            raw += more
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+
+def _win_stdin_is_pipe() -> bool:
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import ctypes
+        import msvcrt
+
+        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+        return ctypes.windll.kernel32.GetFileType(handle) == _WIN_FILE_TYPE_PIPE  # type: ignore[attr-defined]
+    except Exception:
+        return False
+
+
+def _win_get_console_title() -> str | None:
+    if sys.platform != "win32":
+        return None
+
+    try:
+        import ctypes
+
+        buffer = ctypes.create_unicode_buffer(1024)
+        length = ctypes.windll.kernel32.GetConsoleTitleW(buffer, len(buffer))  # type: ignore[attr-defined]
+        if length <= 0:
+            return None
+        return buffer.value
+    except Exception:
+        return None
+
+
+def _win_set_console_title(title: str) -> bool:
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.kernel32.SetConsoleTitleW(title))  # type: ignore[attr-defined]
+    except Exception:
+        return False
+
+
+def _win_get_foreground_window_title() -> str | None:
+    if sys.platform != "win32":
+        return None
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return None
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        return buffer.value
+    except Exception:
+        return None
+
+
+def _win_get_mouse_fallback_debug_snapshot(
+    fallback: "_WindowsMouseWheelFallback | None",
+) -> dict[str, Any]:
+    return {
+        "active": fallback is not None,
+        "hookInstalled": getattr(fallback, "_hook_installed", False),
+        "sessionTitle": getattr(fallback, "_session_title", None),
+        "foregroundTitle": _win_get_foreground_window_title() if sys.platform == "win32" else None,
+        "rawCallbacks": getattr(fallback, "_raw_callback_count", 0),
+        "matchedCallbacks": getattr(fallback, "_matched_callback_count", 0),
+        "callbackForegroundTitle": getattr(fallback, "_last_callback_foreground_title", None),
+    }
+
+
+class _WindowsMouseWheelFallback:
+    """Capture wheel input on Windows terminals that expose stdin as a pipe.
+
+    ConPTY-hosted terminals may deliver keyboard input through the stdin pipe
+    while dropping real mouse wheel events entirely. A low-level mouse hook
+    lets Astrid recover wheel scrolling without relying on the terminal to
+    translate those events back into VT sequences.
+    """
+
+    def __init__(self) -> None:
+        self._events: queue.SimpleQueue[WheelEvent] = queue.SimpleQueue()
+        self._thread: threading.Thread | None = None
+        self._thread_ready = threading.Event()
+        self._stop = threading.Event()
+        self._thread_id: int | None = None
+        self._hook_installed = False
+        self._callback: Any = None
+        self._original_title: str | None = None
+        self._session_title: str | None = None
+        self._raw_callback_count = 0
+        self._matched_callback_count = 0
+        self._last_callback_foreground_title: str | None = None
+
+    @property
+    def events(self) -> queue.SimpleQueue[WheelEvent]:
+        return self._events
+
+    def start(self) -> bool:
+        if sys.platform != "win32":
+            return False
+
+        self._original_title = _win_get_console_title() or ""
+        self._session_title = _win_build_mouse_fallback_title(self._original_title)
+        _win_set_console_title(self._session_title)
+
+        self._thread = threading.Thread(
+            target=self._run,
+            name="astrid-win-wheel-hook",
+            daemon=True,
+        )
+        self._thread.start()
+        self._thread_ready.wait(timeout=0.5)
+        if not self._hook_installed:
+            self.stop()
+        return self._hook_installed
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread_id is not None:
+            try:
+                import ctypes
+
+                ctypes.windll.user32.PostThreadMessageW(  # type: ignore[attr-defined]
+                    self._thread_id,
+                    _WIN_WM_QUIT,
+                    0,
+                    0,
+                )
+            except Exception:
+                pass
+        if self._thread is not None:
+            self._thread.join(timeout=0.5)
+            self._thread = None
+        if self._original_title is not None:
+            _win_set_console_title(self._original_title)
+        self._session_title = None
+        self._original_title = None
+
+    def _run(self) -> None:
+        try:
+            import ctypes
+            import ctypes.wintypes as wintypes
+
+            class _POINT(ctypes.Structure):
+                _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+            class _MSLLHOOKSTRUCT(ctypes.Structure):
+                _fields_ = [
+                    ("pt", _POINT),
+                    ("mouseData", wintypes.DWORD),
+                    ("flags", wintypes.DWORD),
+                    ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ctypes.c_size_t),
+                ]
+
+            user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            user32.CallNextHookEx.argtypes = [
+                wintypes.HHOOK,
+                ctypes.c_int,
+                wintypes.WPARAM,
+                wintypes.LPARAM,
+            ]
+            user32.CallNextHookEx.restype = ctypes.c_ssize_t
+            low_level_mouse_proc = ctypes.WINFUNCTYPE(
+                ctypes.c_ssize_t,
+                ctypes.c_int,
+                wintypes.WPARAM,
+                wintypes.LPARAM,
+            )
+
+            def _proc(n_code: int, w_param: int, l_param: int) -> int:
+                if n_code >= 0 and w_param == _WIN_WM_MOUSEWHEEL and self._session_title:
+                    self._raw_callback_count += 1
+                    foreground_title = _win_get_foreground_window_title()
+                    self._last_callback_foreground_title = foreground_title
+                    if _win_titles_match(self._session_title, foreground_title):
+                        self._matched_callback_count += 1
+                        mouse = ctypes.cast(
+                            l_param,
+                            ctypes.POINTER(_MSLLHOOKSTRUCT),
+                        ).contents
+                        delta = ctypes.c_short((mouse.mouseData >> 16) & 0xFFFF).value
+                        if delta > 0:
+                            self._events.put(WheelEvent(direction="up"))
+                        elif delta < 0:
+                            self._events.put(WheelEvent(direction="down"))
+                return _win_call_next_hook_ex(user32, n_code, w_param, l_param)
+
+            self._callback = low_level_mouse_proc(_proc)
+            self._thread_id = kernel32.GetCurrentThreadId()
+            hook = user32.SetWindowsHookExW(
+                _WIN_WH_MOUSE_LL,
+                self._callback,
+                None,
+                0,
+            )
+            self._hook_installed = bool(hook)
+            self._thread_ready.set()
+            if not hook:
+                return
+
+            message = wintypes.MSG()
+            while not self._stop.is_set():
+                result = user32.GetMessageW(ctypes.byref(message), None, 0, 0)
+                if result in (0, -1):
+                    break
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+
+            user32.UnhookWindowsHookEx(hook)
+        except Exception:
+            logging.debug("Windows wheel fallback hook failed", exc_info=True)
+            self._thread_ready.set()
+
+
+def _maybe_start_windows_mouse_wheel_fallback() -> _WindowsMouseWheelFallback | None:
+    if sys.platform != "win32":
+        return None
+    if os.environ.get("ASTRID_TERMINAL_MODE", "").strip().lower() == "shell":
+        return None
+
+    fallback = _WindowsMouseWheelFallback()
+    if fallback.start():
+        return fallback
+    return None
+
+
+def _read_clipboard_text() -> str:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            CF_UNICODETEXT = 13
+            GMEM_MOVEABLE = 0x0002
+
+            user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+
+            if not user32.OpenClipboard(None):
+                return ""
+            try:
+                handle = user32.GetClipboardData(CF_UNICODETEXT)
+                if not handle:
+                    return ""
+                pointer = kernel32.GlobalLock(handle)
+                if not pointer:
+                    return ""
+                try:
+                    text = ctypes.wstring_at(pointer)
+                finally:
+                    kernel32.GlobalUnlock(handle)
+                return text or ""
+            finally:
+                user32.CloseClipboard()
+        except Exception:
+            return ""
+
+    return ""
+
+
+def _normalize_pasted_text(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
+    return normalized
+
+
+def _insert_input_text(state: ScreenState, text: str) -> bool:
+    if not text:
+        return False
+    state.input = state.input[:state.cursor_offset] + text + state.input[state.cursor_offset:]
+    state.cursor_offset += len(text)
+    state.selected_slash_index = 0
+    state.history_index = len(state.history)
+    return True
+
 
 def _win_read_one_key() -> str:
     """Read one logical key from Windows msvcrt, translating special keys
@@ -988,11 +2243,11 @@ def _win_read_one_key() -> str:
         if msvcrt.kbhit():
             scan = ord(msvcrt.getwch())
         else:
-            # Prefix arrived alone (rare) — treat as Escape
+            # Prefix arrived alone (rare) 鈥?treat as Escape
             return "\x1b"
         return _WIN_SCANCODE_TO_ANSI.get(scan, "")
 
-    # Ctrl+C → keep as '\x03' so parse_input_chunk handles it
+    # Ctrl+C 鈫?keep as '\x03' so parse_input_chunk handles it
     return ch
 
 
@@ -1062,6 +2317,7 @@ class _RawModeContext:
     def __init__(self) -> None:
         self._old_settings: Any = None
         self._old_cp: int | None = None
+        self._old_input_mode: int | None = None
 
     def __enter__(self) -> _RawModeContext:
         if sys.platform == "win32":
@@ -1071,9 +2327,16 @@ class _RawModeContext:
             # Switch console to UTF-8 code page for proper Unicode handling
             try:
                 import ctypes
+                import ctypes.wintypes as wintypes
                 kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
                 self._old_cp = kernel32.GetConsoleOutputCP()
                 kernel32.SetConsoleOutputCP(65001)  # UTF-8
+
+                h_in = kernel32.GetStdHandle(-10)
+                mode_in = wintypes.DWORD()
+                if kernel32.GetConsoleMode(h_in, ctypes.byref(mode_in)):
+                    self._old_input_mode = mode_in.value
+                    kernel32.SetConsoleMode(h_in, _win_build_input_mode(mode_in.value))
             except Exception:
                 pass
         else:
@@ -1082,15 +2345,15 @@ class _RawModeContext:
             fd = sys.stdin.fileno()
             self._old_settings = termios.tcgetattr(fd)
             new = termios.tcgetattr(fd)
-            # Input flags: disable CR→NL translation and XON/XOFF flow control,
+            # Input flags: disable CR鈫扤L translation and XON/XOFF flow control,
             # strip high bit, and break signal generation.
             new[0] &= ~(
                 termios.BRKINT | termios.ICRNL | termios.INPCK
                 | termios.ISTRIP | termios.IXON
             )
-            # Output flags: KEEP OPOST so that \n → \r\n translation still
+            # Output flags: KEEP OPOST so that \n 鈫?\r\n translation still
             # works.  tty.setraw() clears OPOST which causes "staircase"
-            # output on Linux/macOS — every newline only moves down without
+            # output on Linux/macOS 鈥?every newline only moves down without
             # returning the cursor to column 0.
             # new[1] is intentionally left untouched.
             # Control flags: set 8-bit chars
@@ -1115,6 +2378,15 @@ class _RawModeContext:
                     ctypes.windll.kernel32.SetConsoleOutputCP(self._old_cp)  # type: ignore[attr-defined]
                 except Exception:
                     pass
+            if self._old_input_mode is not None:
+                try:
+                    import ctypes
+                    ctypes.windll.kernel32.SetConsoleMode(  # type: ignore[attr-defined]
+                        ctypes.windll.kernel32.GetStdHandle(-10),  # type: ignore[attr-defined]
+                        self._old_input_mode,
+                    )
+                except Exception:
+                    pass
         elif self._old_settings is not None:
             import termios
 
@@ -1134,14 +2406,21 @@ def _execute_tool_shortcut(
     rerender: Callable[[], None],
 ) -> None:
     state.is_busy = True
-    state.status = f"Running {tool_name}..."
+    summary = _summarize_tool_input(tool_name, tool_input)
+    _set_single_agent_busy_state(
+        state,
+        verb="Running",
+        summary=summary,
+        status=f"Running {tool_name}...",
+    )
     state.active_tool = tool_name
     entry_id = _push_transcript_entry(
         state,
         kind="tool",
         toolName=tool_name,
         status="running",
-        body=_summarize_tool_input(tool_name, tool_input),
+        body=summary,
+        actionSummary=summary,
     )
     rerender()
 
@@ -1158,13 +2437,15 @@ def _execute_tool_shortcut(
         output = result.output if result.ok else f"ERROR: {result.output}"
         _update_tool_entry(state, entry_id, "success" if result.ok else "error", output)
         _collapse_tool_entry(state, entry_id, _summarize_collapsed_tool_body(output))
-        # Don't reset scroll offset — respect user's manual scroll position
+        # Don't reset scroll offset 鈥?respect user's manual scroll position
     finally:
         state.is_busy = False
         state.active_tool = None
+        state.current_action_summary = None
         _finalize_dangling_running_tools(state)
         if not _get_running_tool_entries(state):
             state.status = None
+        _drain_next_queued_turn(args, state, rerender)
 
 
 # ---------------------------------------------------------------------------
@@ -1179,24 +2460,23 @@ def _handle_input(
     submitted_raw_input: str | None = None,
 ) -> bool:
     """Returns True if /exit was typed."""
+    input_text = (submitted_raw_input if submitted_raw_input is not None else state.input).strip()
     if state.is_busy:
-        state.status = (
-            f"Running {state.active_tool}..."
-            if state.active_tool
-            else "Current turn is still running..."
-        )
+        _enqueue_next_turn(state, input_text)
         return False
 
-    input_text = (submitted_raw_input if submitted_raw_input is not None else state.input).strip()
+    terminal_mode = os.environ.get("ASTRID_TERMINAL_MODE", "tui").strip().lower()
     if not input_text:
         return False
     if input_text == "/exit":
         return True
+    if not _has_non_welcome_transcript_entries(state):
+        _sync_welcome_transcript_entry(args, state)
 
     # History
     if not state.history or state.history[-1] != input_text:
         state.history.append(input_text)
-        save_history_entries(state.history)
+        save_history_entries(state.history, args.cwd)
     state.history_index = len(state.history)
     state.history_draft = ""
 
@@ -1215,29 +2495,44 @@ def _handle_input(
         )
         return False
 
-    # /debug — show scroll diagnostics
+    # /debug 鈥?show scroll diagnostics
     if input_text == "/debug":
-        from astrid.tui.transcript import _compute_total_lines, get_transcript_max_scroll_offset
+        from astrid.tui.transcript import _compute_total_lines
         cols, rows = _get_terminal_size()
         compact = _is_compact_terminal()
-        body_lines = _get_transcript_body_lines(args, state)
-        total_lines = _compute_total_lines(state.transcript)
-        max_scroll = get_transcript_max_scroll_offset(state.transcript, body_lines)
-        chrome = _get_chrome_overhead(args, state)
+        viewport_lines = max(8, rows)
+        document = _build_simple_page_flow_document(args, state, include_scroll_hint=False)
+        document_lines = len(_split_rendered_lines(document))
+        total_lines = _compute_total_lines(state.transcript, separator_lines=[""])
+        max_scroll = max(0, document_lines - viewport_lines)
         lines = [
             "=== Scroll Debug ===",
             f"Terminal: {cols}x{rows}  compact={compact}",
-            f"Chrome overhead: {chrome} lines",
-            f"Transcript frame: 4 lines",
-            f"Body window: {body_lines} lines",
+            "Primary view: page-flow",
+            f"Viewport window: {viewport_lines} lines",
+            f"Rendered document: {document_lines} lines",
             f"Transcript total: {total_lines} lines",
             f"Scroll offset: {state.transcript_scroll_offset}/{max_scroll}",
             f"Mouse tracking: ESC[?1000h ESC[?1003h ESC[?1006h",
+            f"Wheel events seen: {state.wheel_debug_event_count}",
+            f"Last wheel direction: {state.wheel_debug_last_direction or 'none'}",
+            f"Windows fallback active: {state.wheel_debug_fallback_active}",
+            f"Windows fallback hook: {state.wheel_debug_fallback_hook}",
+            f"Windows session title: {state.wheel_debug_session_title or 'n/a'}",
+            f"Windows foreground title: {state.wheel_debug_foreground_title or 'n/a'}",
+            f"Windows raw wheel callbacks: {state.wheel_debug_raw_callback_count}",
+            f"Windows matched wheel callbacks: {state.wheel_debug_matched_callback_count}",
+            f"Windows callback fg title: {state.wheel_debug_callback_foreground_title or 'n/a'}",
             "",
             "Try scrolling now. If scroll_offset changes, mouse events work.",
             "Use PageUp/PageDown or Ctrl+A/E as keyboard alternatives.",
         ]
         _push_transcript_entry(state, kind="assistant", body="\n".join(lines))
+        return False
+
+    companion_result = _handle_companion_command(state, input_text)
+    if companion_result is not None:
+        _push_transcript_entry(state, kind="assistant", body=companion_result)
         return False
 
     # Local commands
@@ -1271,8 +2566,13 @@ def _handle_input(
     # Agent turn
     _push_transcript_entry(state, kind="user", body=input_text)
     state.transcript_scroll_offset = 0
-    state.status = "Thinking..."
     state.is_busy = True
+    _set_single_agent_busy_state(
+        state,
+        verb=_SINGLE_AGENT_DEFAULT_VERB,
+        summary="reviewing request",
+        status="Thinking...",
+    )
     
     # Update app state
     if state.app_state:
@@ -1284,6 +2584,9 @@ def _handle_input(
     pending_tool_entries: dict[str, list[int]] = defaultdict(list)
     aggregated_edit_by_key: dict[str, AggregatedEditProgress] = {}
     aggregated_edit_by_entry_id: dict[int, AggregatedEditProgress] = {}
+
+    if hasattr(args.tools, "refresh_capabilities"):
+        args.tools.refresh_capabilities()
 
     # Refresh system prompt
     args.messages[0] = {
@@ -1307,19 +2610,45 @@ def _handle_input(
         )
 
     def on_assistant_message(content: str) -> None:
+        _set_single_agent_busy_state(
+            state,
+            verb="Answering",
+            summary="drafting final response",
+        )
+        _prune_completed_progress_entries(state)
         _push_transcript_entry(state, kind="assistant", body=content)
-        # Don't reset scroll offset — respect user's manual scroll position
+        # Don't reset scroll offset 鈥?respect user's manual scroll position
         rerender()
 
     def on_progress_message(content: str) -> None:
-        _push_transcript_entry(state, kind="progress", body=content)
-        # Don't reset scroll offset — respect user's manual scroll position
+        verb, summary = _summarize_progress_update(content)
+        _set_single_agent_busy_state(
+            state,
+            verb=verb,
+            summary=summary,
+            status=f"{verb}...",
+        )
+        if _should_record_progress_entries(terminal_mode):
+            _push_transcript_entry(
+                state,
+                kind="progress",
+                body=content,
+                actionSummary=summary,
+                phaseVerb=verb,
+            )
+        # Don't reset scroll offset 鈥?respect user's manual scroll position
         rerender()
 
     def on_tool_start(tool_name: str, tool_input: Any) -> None:
-        state.status = f"Running {tool_name}..."
+        summary = _summarize_tool_input(tool_name, tool_input)
+        _set_single_agent_busy_state(
+            state,
+            verb="Running",
+            summary=summary,
+            status=f"Running {tool_name}...",
+        )
         state.active_tool = tool_name
-        state.tool_start_time = time.monotonic()  # 记录工具启动时间
+        state.tool_start_time = time.monotonic()  # 璁板綍宸ュ叿鍚姩鏃堕棿
 
         target_path = _extract_path_from_tool_input(tool_input)
         can_aggregate = _is_file_edit_tool(tool_name) and target_path is not None
@@ -1343,7 +2672,8 @@ def _handle_input(
                     kind="tool",
                     toolName=tool_name,
                     status="running",
-                    body=_summarize_tool_input(tool_name, tool_input),
+                    body=summary,
+                    actionSummary=summary,
                 )
                 progress = AggregatedEditProgress(
                     entry_id=entry_id,
@@ -1352,7 +2682,7 @@ def _handle_input(
                     total=1,
                     completed=0,
                     errors=0,
-                    last_output=_summarize_tool_input(tool_name, tool_input),
+                    last_output=summary,
                 )
                 aggregated_edit_by_key[key] = progress
                 aggregated_edit_by_entry_id[entry_id] = progress
@@ -1362,16 +2692,16 @@ def _handle_input(
                 kind="tool",
                 toolName=tool_name,
                 status="running",
-                body=_summarize_tool_input(tool_name, tool_input),
+                body=summary,
+                actionSummary=summary,
             )
 
         pending_tool_entries[tool_name].append(entry_id)
-        # Don't reset scroll offset — respect user's manual scroll position
+        # Don't reset scroll offset 鈥?respect user's manual scroll position
         rerender()
 
     def on_tool_result(tool_name: str, output: str, is_error: bool) -> None:
-        # 计算并显示工具执行时间
-        elapsed = ""
+        # 璁＄畻骞舵樉绀哄伐鍏锋墽琛屾椂闂?        elapsed = ""
         if state.tool_start_time is not None:
             elapsed_secs = time.monotonic() - state.tool_start_time
             if elapsed_secs > 1:
@@ -1423,11 +2753,11 @@ def _handle_input(
                     suggestions = []
                     output_lower = output.lower()
                     if "not found" in output_lower or "no such file" in output_lower:
-                        suggestions.append("Hint: file not found — use /ls to list files")
+                        suggestions.append("Hint: file not found 鈥?use /ls to list files")
                     elif "permission" in output_lower or "denied" in output_lower:
-                        suggestions.append("Hint: permission denied — check file access rights")
+                        suggestions.append("Hint: permission denied 鈥?check file access rights")
                     elif "syntax" in output_lower or "error" in output_lower:
-                        suggestions.append("Hint: error occurred — review output and fix issues")
+                        suggestions.append("Hint: error occurred 鈥?review output and fix issues")
 
                     if suggestions:
                         display_output = f"ERROR: {output}\n\n" + "\n".join(suggestions)
@@ -1448,12 +2778,17 @@ def _handle_input(
                 )
 
         state.active_tool = None
+        _set_single_agent_busy_state(
+            state,
+            verb="Collecting",
+            summary=f"{tool_name} finished: {_summarize_collapsed_tool_body(output)}",
+        )
         remaining = sum(len(v) for v in pending_tool_entries.values())
         if remaining > 0:
             state.status = f"{remaining} tool(s) still running..."
         else:
             state.status = None
-        # Don't reset scroll offset — respect user's manual scroll position
+        # Don't reset scroll offset 鈥?respect user's manual scroll position
         rerender()
 
     args.permissions.begin_turn()
@@ -1534,6 +2869,7 @@ def _handle_input(
                 ),
             ]
             completed_summaries: list[str] = []
+            reviewer_evidence_blocks: list[str] = []
 
             for index, (agent_type, role, mission, scope) in enumerate(worker_specs):
                 worker_name, color = _pick_worker_name(role, index)
@@ -1579,6 +2915,7 @@ def _handle_input(
                 mark_worker_reported(runtime_state, worker_record.id, instance.result or "")
                 _sync_orchestration_entry(state)
                 completed_summaries.append(_summarize_worker_result(instance))
+                reviewer_evidence_blocks.append(manager.compile_result_summary(instance.id))
                 rerender()
 
             reviewer_name, reviewer_color = _pick_worker_name(WorkerRole.REVIEW_AGENT, 0)
@@ -1590,6 +2927,7 @@ def _handle_input(
                 color=reviewer_color,
             )
             mark_review_required(runtime_state, reviewer_summary="review in progress")
+            _set_buddy_reaction(state, "Double-checking the patch", duration=5.0)
             _set_worker_state(
                 state,
                 reviewer_record.id,
@@ -1604,7 +2942,7 @@ def _handle_input(
                 AgentType.PLAN,
                 (
                     f"Review the following worker results for the task:\n{input_text}\n\n"
-                    + "\n".join(f"- {summary}" for summary in completed_summaries)
+                    + "\n\n".join(reviewer_evidence_blocks)
                     + "\n\nReturn a concise review verdict with risks and confidence."
                 ),
             )
@@ -1622,6 +2960,7 @@ def _handle_input(
             mark_worker_reported(runtime_state, reviewer_record.id, reviewer_instance.result or "")
             runtime_state.task_state = TaskRuntimeState.MERGING
             runtime_state.narrative = "Merging worker output into final response..."
+            _set_buddy_reaction(state, "Stitching the results together", duration=5.0)
             _sync_orchestration_entry(state)
 
             final_summary = "\n".join(completed_summaries + [_summarize_worker_result(reviewer_instance)])
@@ -1644,8 +2983,10 @@ def _handle_input(
             args.permissions.end_turn()
             with agent_thread_lock:
                 agent_result["done"] = True
+            _prune_completed_progress_entries(state)
             state.is_busy = False
             state.active_tool = None
+            state.current_action_summary = None
             state.status = state.orchestration.narrative if state.orchestration else None
             rerender()
     
@@ -1671,8 +3012,10 @@ def _handle_input(
             args.permissions.end_turn()
             with agent_thread_lock:
                 agent_result["done"] = True
+            _prune_completed_progress_entries(state)
             state.is_busy = False
             state.active_tool = None
+            state.current_action_summary = None
             state.status = None
             rerender()
     
@@ -1680,7 +3023,7 @@ def _handle_input(
     agent_thread = threading.Thread(target=target, daemon=True)
     agent_thread.start()
     state.agent_thread = agent_thread
-    # Assign lock BEFORE result — the main loop checks agent_result first,
+    # Assign lock BEFORE result 鈥?the main loop checks agent_result first,
     # so the lock must already be available to avoid AttributeError.
     state.agent_lock = agent_thread_lock
     state.agent_result = agent_result
@@ -1765,12 +3108,13 @@ def run_tty_app(
     cost_tracker = CostTracker()
 
     state = ScreenState(
-        history=load_history_entries(),
+        history=load_history_entries(cwd),
         session=session,
         autosave=AutosaveManager(session),
         app_state=app_state_store,
         cost_tracker=cost_tracker,
     )
+    _apply_startup_pet_state(state)
     state.history_index = len(state.history)
 
     # Restore session state if resuming
@@ -1797,7 +3141,7 @@ def run_tty_app(
             resolve=lambda r: None,
         )
         # Signal the main thread's throttled renderer to show the approval UI.
-        # Do NOT call _render_screen() here — we're on the agent thread and
+        # Do NOT call _render_screen() here 鈥?we're on the agent thread and
         # writing to stdout concurrently with the main thread would corrupt
         # the terminal display.  request() only sets a pending flag; the main
         # event loop's next flush() will do the actual render safely.
@@ -1810,17 +3154,53 @@ def run_tty_app(
 
     permissions.prompt = _permission_prompt_handler
 
+    terminal_mode = os.environ.get("ASTRID_TERMINAL_MODE", "tui").strip().lower()
+    use_alternate_screen = _should_use_alternate_screen()
+    _has_inline_frame = False
+    _inline_line_count = 0
+
+    def _render_active_frame() -> None:
+        nonlocal _has_inline_frame, _inline_line_count
+        if use_alternate_screen:
+            frame = _build_screen_simple(args, state)
+            sys.stdout.write(frame)
+        else:
+            frame = _build_screen_simple(args, state)
+            width, _ = _get_terminal_size()
+            rendered, _inline_line_count = _render_inline_frame_update(
+                frame,
+                _inline_line_count if _has_inline_frame else 0,
+                width,
+            )
+            sys.stdout.write(rendered)
+        sys.stdout.flush()
+        if not use_alternate_screen:
+            _has_inline_frame = True
+
     # Throttled renderer: coalesces rapid rerender() calls to reduce flickering
-    throttled = _ThrottledRenderer(lambda: _render_screen_simple(args, state), min_interval=0.016)
+    throttled = _ThrottledRenderer(
+        _render_active_frame,
+        min_interval=_render_throttle_interval(terminal_mode),
+    )
 
     def rerender() -> None:
         throttled.request()
 
     input_remainder = ""
     should_exit = False
+    windows_wheel_fallback = (
+        _maybe_start_windows_mouse_wheel_fallback()
+        if _should_start_windows_wheel_fallback(terminal_mode)
+        else None
+    )
+    state.wheel_debug_fallback_active = windows_wheel_fallback is not None
+    state.wheel_debug_fallback_hook = bool(getattr(windows_wheel_fallback, "_hook_installed", False))
+    state.wheel_debug_session_title = getattr(windows_wheel_fallback, "_session_title", None)
+    state.wheel_debug_foreground_title = _win_get_foreground_window_title() if sys.platform == "win32" else None
     # Autosave throttle: check at most every ~2 seconds, not every 20ms
     _autosave_counter = 0
     _AUTOSAVE_CHECK_INTERVAL = 100  # iterations (~2s at 20ms polling)
+    _last_animation_tick = time.monotonic()
 
     enter_alternate_screen()
     hide_cursor()
@@ -1848,10 +3228,38 @@ def run_tty_app(
             _prev_sigwinch = None
 
     try:
-        _render_screen_simple(args, state)
+        _render_active_frame()
 
         with _RawModeContext():
             while not should_exit:
+                now = time.monotonic()
+                animation_interval = _busy_animation_interval(terminal_mode)
+                if (
+                    animation_interval is not None
+                    and now - _last_animation_tick >= animation_interval
+                    and (
+                        (
+                            state.orchestration is not None
+                            and state.orchestration.task_state not in {TaskRuntimeState.DONE, TaskRuntimeState.FAILED}
+                        )
+                        or (state.is_busy and state.orchestration is None)
+                    )
+                ):
+                    state.animation_frame += 1
+                    if state.orchestration is not None:
+                        _sync_orchestration_entry(state)
+                    throttled.request()
+                    _last_animation_tick = now
+
+                if (
+                    not state.is_busy
+                    and state.orchestration is None
+                    and now - state.welcome_tip_rotated_at >= 5.0
+                ):
+                    state.welcome_tip_index += 1
+                    state.welcome_tip_rotated_at = now
+                    throttled.request()
+
                 # Autosave check (throttled)
                 _autosave_counter += 1
                 if state.autosave and _autosave_counter >= _AUTOSAVE_CHECK_INTERVAL:
@@ -1866,15 +3274,66 @@ def run_tty_app(
                         if agent_result_data.get("messages"):
                             args.messages = agent_result_data["messages"]
                         agent_result_data["done"] = False  # Reset flag
+                    _drain_next_queued_turn(args, state, rerender)
 
                 # Read raw input
                 if sys.platform == "win32":
                     import msvcrt
 
+                    state.wheel_debug_foreground_title = _win_get_foreground_window_title()
+
+                    fallback_events = _win_drain_mouse_fallback_events(
+                        windows_wheel_fallback.events if windows_wheel_fallback is not None else None
+                    )
+                    if fallback_events:
+                        for event in fallback_events:
+                            try:
+                                _handle_event(args, state, event, rerender, approval_event, approval_result)
+                                if state.input == "/exit":
+                                    raise SystemExit(0)
+                            except SystemExit:
+                                should_exit = True
+                                break
+                        if should_exit:
+                            continue
+                        throttled.flush()
+                        continue
+
+                    pipe_chunk = _win_read_pipe_chunk()
+                    if pipe_chunk is not None:
+                        if not pipe_chunk:
+                            throttled.flush()
+                            time.sleep(_idle_poll_interval(terminal_mode))
+                            continue
+                        chunk = pipe_chunk
+                    elif windows_wheel_fallback is None:
+                        pending_windows_events: list[ParsedInputEvent] = []
+                        while True:
+                            win_event = _win_try_read_console_event()
+                            if win_event is False:
+                                continue
+                            if win_event is None:
+                                break
+                            pending_windows_events.append(win_event)
+
+                        if pending_windows_events:
+                            for event in pending_windows_events:
+                                try:
+                                    _handle_event(args, state, event, rerender, approval_event, approval_result)
+                                    if state.input == "/exit":
+                                        raise SystemExit(0)
+                                except SystemExit:
+                                    should_exit = True
+                                    break
+                            if should_exit:
+                                continue
+                            throttled.flush()
+                            continue
+
                     if not msvcrt.kbhit():
                         # Flush any deferred renders during idle
                         throttled.flush()
-                        time.sleep(0.05)  # 从 0.02 增加到 0.05 降低 CPU 使用率
+                        time.sleep(_idle_poll_interval(terminal_mode))
                         continue
                     # Use _win_read_one_key to translate special keys
                     chunk = ""
@@ -1925,7 +3384,7 @@ def run_tty_app(
                         should_exit = True
                         break
                     except Exception as e:
-                        # 记录事件处理错误，但不中断主循环
+                        # 璁板綍浜嬩欢澶勭悊閿欒锛屼絾涓嶄腑鏂富寰幆
                         logging.debug("Event handling error: %s", e, exc_info=True)
 
                 # Ensure the final state after processing all events is visible
@@ -1938,8 +3397,14 @@ def run_tty_app(
 
             _signal.signal(_signal.SIGWINCH, _prev_sigwinch)
 
+        if windows_wheel_fallback is not None:
+            windows_wheel_fallback.stop()
+
         show_cursor()
         exit_alternate_screen()
+        if not use_alternate_screen:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
         
         # Final session save
         if state.session:
@@ -1997,16 +3462,16 @@ def _handle_event(
         approval_event: Threading event for approval synchronization
         approval_result: Dict to store approval decision
     """
-    # ---------- Ctrl+C → exit ----------
+    # ---------- Ctrl+C 鈫?exit ----------
     # \x03 is parsed as KeyEvent(name='c', ctrl=True) by parse_input_chunk
-    # (CTRL_CHAR_TO_NAME maps \x03 → 'c', produces KeyEvent not TextEvent)
+    # (CTRL_CHAR_TO_NAME maps \x03 鈫?'c', produces KeyEvent not TextEvent)
     if isinstance(event, KeyEvent) and event.ctrl and event.name == "c":
         raise SystemExit(0)
     if isinstance(event, TextEvent) and event.ctrl and event.text == "c":
         raise SystemExit(0)
 
     # ---------- Pending approval mode ----------
-    # Capture locally to avoid TOCTOU — the agent thread may clear
+    # Capture locally to avoid TOCTOU 鈥?the agent thread may clear
     # state.pending_approval between our check and the handler's use.
     pending = state.pending_approval
     if pending is not None:
@@ -2049,6 +3514,8 @@ def _handle_pending_approval_event(
             return
     
     if isinstance(event, WheelEvent):
+        state.wheel_debug_event_count += 1
+        state.wheel_debug_last_direction = event.direction
         if _handle_pending_approval_wheel(state, event, rerender):
             return
 
@@ -2214,12 +3681,54 @@ def _handle_normal_mode_key(
     rerender: Callable[[], None],
 ) -> bool:
     """Handle key events in normal mode. Returns True if handled."""
-    # Return → submit input or select slash command
+    if event.ctrl:
+        if event.name == "u":
+            state.input = ""
+            state.cursor_offset = 0
+            state.selected_slash_index = 0
+            rerender()
+            return True
+
+        if event.name == "a":
+            if not state.input:
+                if _jump_transcript_to_edge(args, state, "top"):
+                    rerender()
+                return True
+            state.cursor_offset = 0
+            rerender()
+            return True
+
+        if event.name == "e":
+            if not state.input:
+                if _jump_transcript_to_edge(args, state, "bottom"):
+                    rerender()
+                return True
+            state.cursor_offset = len(state.input)
+            rerender()
+            return True
+
+        if event.name == "p":
+            if _history_up(state):
+                rerender()
+            return True
+
+        if event.name == "n":
+            if _history_down(state):
+                rerender()
+            return True
+
+        if event.name == "v":
+            pasted = _normalize_pasted_text(_read_clipboard_text())
+            if _insert_input_text(state, pasted):
+                rerender()
+            return True
+
+    # Return 鈫?submit input or select slash command
     if event.name == "return":
         _handle_normal_mode_return(args, state, visible_commands, rerender)
         return True
     
-    # Tab → autocomplete slash command
+    # Tab 鈫?autocomplete slash command
     if event.name == "tab" and visible_commands:
         _handle_normal_mode_tab(state, visible_commands, rerender)
         return True
@@ -2229,23 +3738,29 @@ def _handle_normal_mode_key(
         return True
     
     # Ctrl shortcuts (P, N handled in text handler)
-    # PageUp/PageDown → scroll transcript
-    if event.name == "pageup" and _scroll_transcript_by(args, state, 8):
-        rerender()
+    # PageUp/PageDown 鈫?scroll transcript
+    if event.name == "pageup":
+        handled = _scroll_transcript_by(args, state, 8)
+        if handled:
+            rerender()
         return True
     
-    if event.name == "pagedown" and _scroll_transcript_by(args, state, -8):
-        rerender()
+    if event.name == "pagedown":
+        handled = _scroll_transcript_by(args, state, -8)
+        if handled:
+            rerender()
         return True
     
-    # Alt+Up / Alt+Down → scroll transcript (keyboard alternative to mouse wheel)
+    # Alt+Up / Alt+Down 鈫?scroll transcript (keyboard alternative to mouse wheel)
     if event.name == "up" and event.meta:
-        if _scroll_transcript_by(args, state, 3):
+        handled = _scroll_transcript_by(args, state, 3)
+        if handled:
             rerender()
         return True
     
     if event.name == "down" and event.meta:
-        if _scroll_transcript_by(args, state, -3):
+        handled = _scroll_transcript_by(args, state, -3)
+        if handled:
             rerender()
         return True
     
@@ -2389,51 +3904,10 @@ def _handle_normal_mode_text(
     rerender: Callable[[], None],
 ) -> bool:
     """Handle text events in normal mode. Returns True if handled."""
-    # Ctrl shortcuts
-    if event.ctrl:
-        if event.text == "u":  # Ctrl-U → clear line
-            state.input = ""
-            state.cursor_offset = 0
-            state.selected_slash_index = 0
-            rerender()
-            return True
-        
-        if event.text == "a":  # Ctrl-A → home / jump to top
-            if not state.input:
-                if _jump_transcript_to_edge(args, state, "top"):
-                    rerender()
-                return True
-            state.cursor_offset = 0
-            rerender()
-            return True
-        
-        if event.text == "e":  # Ctrl-E → end / jump to bottom
-            if not state.input:
-                if _jump_transcript_to_edge(args, state, "bottom"):
-                    rerender()
-                return True
-            state.cursor_offset = len(state.input)
-            rerender()
-            return True
-        
-        if event.text == "p":  # Ctrl-P → history up
-            if _history_up(state):
-                rerender()
-            return True
-        
-        if event.text == "n":  # Ctrl-N → history down
-            if _history_down(state):
-                rerender()
-            return True
-        
-        return False
-    
     # Regular text input (accept any non-empty text, including multi-byte CJK/emoji)
     if not event.ctrl and event.text:
-        state.input = state.input[:state.cursor_offset] + event.text + state.input[state.cursor_offset:]
-        state.cursor_offset += len(event.text)
-        state.selected_slash_index = 0
-        state.history_index = len(state.history)
+        if not _insert_input_text(state, event.text):
+            return False
         rerender()
         return True
     
@@ -2447,8 +3921,8 @@ def _handle_normal_mode_wheel(
     rerender: Callable[[], None],
 ) -> bool:
     """Handle wheel events in normal mode for scrolling. Returns True if handled."""
-    delta = 3 if event.direction == "up" else -3
-    if _scroll_transcript_by(args, state, delta):
+    handled = _scroll_transcript_by(args, state, 3 if event.direction == "up" else -3)
+    if handled:
         rerender()
         return True
     return False
@@ -2583,3 +4057,4 @@ def _handle_feedback_mode_event(
     if isinstance(event, TextEvent) and not event.ctrl:
         pending.feedback_input += event.text
         rerender()
+

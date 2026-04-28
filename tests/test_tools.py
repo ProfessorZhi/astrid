@@ -9,16 +9,9 @@ from astrid.tooling import ToolContext
 
 
 def test_split_command_line_supports_quotes() -> None:
-    import os
-
     result = split_command_line("git commit -m 'hello world'")
     assert result[:3] == ["git", "commit", "-m"]
-    # On Windows, shlex.split(posix=False) preserves the quotes around
-    # the argument; on Unix, posix=True strips them.
-    if os.name == "nt":
-        assert result[3] == "'hello world'"
-    else:
-        assert result[3] == "hello world"
+    assert result[3] == "hello world"
 
 
 def test_write_file_tool_writes_after_review(tmp_path: Path) -> None:
@@ -80,3 +73,20 @@ def test_run_command_tool_supports_echo_on_current_platform(tmp_path: Path) -> N
 
     assert result.ok is True
     assert "hello" in result.output.lower()
+
+
+def test_split_command_line_unwraps_quoted_python_c_payload() -> None:
+    result = split_command_line('python -c "import os;print(os.getcwd())"')
+
+    assert result == ["python", "-c", "import os;print(os.getcwd())"]
+
+
+def test_run_command_tool_executes_quoted_python_c_payload(tmp_path: Path) -> None:
+    permissions = PermissionManager(str(tmp_path), prompt=lambda request: {"decision": "allow_once"})
+    result = run_command_tool.run(
+        {"command": 'python -c "import os;print(os.getcwd())"'},
+        ToolContext(cwd=str(tmp_path), permissions=permissions),
+    )
+
+    assert result.ok is True
+    assert str(tmp_path) in result.output

@@ -1,5 +1,10 @@
-from astrid.cli_commands import find_matching_slash_commands, format_slash_commands
+from pathlib import Path
+
+from astrid.cli_commands import find_matching_slash_commands, format_slash_commands, try_handle_local_command
+from astrid import cli_commands as cli_commands_mod
 from astrid.local_tool_shortcuts import parse_local_tool_shortcut
+from astrid.tooling import ToolCatalog, ToolRegistry
+from astrid.tools import create_default_tool_registry
 
 
 def test_find_matching_slash_commands_returns_help_variants() -> None:
@@ -45,3 +50,101 @@ def test_format_slash_commands_includes_history_and_retry() -> None:
     commands = format_slash_commands()
     assert "/history" in commands
     assert "/retry" in commands
+    assert "Available Commands" in commands
+
+
+def test_try_handle_local_command_executes_named_skill_from_workspace(tmp_path: Path) -> None:
+    skill_file = tmp_path / ".astrid" / "skills" / "demo" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("# Demo\n\nProject skill description\n\nUse this workflow.\n", encoding="utf-8")
+
+    tools = create_default_tool_registry(str(tmp_path), runtime=None)
+    try:
+        result = try_handle_local_command("/skills exec demo", tools=tools)
+    finally:
+        tools.dispose()
+
+    assert result is not None
+    assert "SKILL: demo" in result
+    assert "Project skill description" in result
+    assert "Use this workflow." in result
+
+
+def test_try_handle_local_command_refreshes_newly_added_skill_listing(tmp_path: Path) -> None:
+    tools = create_default_tool_registry(str(tmp_path), runtime=None)
+    skill_file = tmp_path / ".astrid" / "skills" / "late" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("# Late\n\nLate-loaded skill\n", encoding="utf-8")
+    try:
+        result = try_handle_local_command("/skills", tools=tools)
+    finally:
+        tools.dispose()
+
+    assert result is not None
+    assert "late" in result
+    assert "Late-loaded skill" in result
+
+
+def test_try_handle_local_command_reports_live_mcp_servers(tmp_path: Path) -> None:
+    server_script = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
+    tools = create_default_tool_registry(
+        str(tmp_path),
+        runtime={
+            "mcpServers": {
+                "fake": {
+                    "command": "python",
+                    "args": [str(server_script)],
+                    "protocol": "newline-json",
+                }
+            }
+        },
+    )
+    try:
+        result = try_handle_local_command("/mcp", tools=tools)
+    finally:
+        tools.dispose()
+
+    assert result is not None
+    assert "fake  status=connected" in result
+    assert "tools=1" in result
+    assert "resources=1" in result
+    assert "prompts=1" in result
+
+
+def test_try_handle_local_command_mcp_triggers_refresh_hook() -> None:
+    refreshed: list[str] = []
+
+    def _refresh() -> ToolCatalog:
+        refreshed.append("called")
+        return ToolCatalog(
+            tools=[],
+            skills=[],
+            mcp_servers=[
+                {
+                    "name": "dynamic",
+                    "status": "connected",
+                    "toolCount": 2,
+                    "resourceCount": 1,
+                    "promptCount": 1,
+                    "protocol": "newline-json",
+                    "error": None,
+                }
+            ],
+        )
+
+    tools = ToolRegistry([], refresh_catalog=_refresh)
+
+    result = try_handle_local_command("/mcp", tools=tools)
+
+    assert refreshed == ["called"]
+    assert result is not None
+    assert "dynamic  status=connected" in result
+
+
+def test_try_handle_local_command_history_reads_workspace_history(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_commands_mod, "load_history_entries", lambda workspace=None: ["first", "second"])
+
+    result = try_handle_local_command("/history")
+
+    assert result == "1. first\n2. second"

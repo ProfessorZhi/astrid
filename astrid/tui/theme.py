@@ -1,7 +1,7 @@
-"""Morandi color theme for Astrid TUI.
+"""Warm orange theme for Astrid TUI.
 
-A low-saturation palette inspired by the Rust version's ColorTheme.
-All colors are expressed as ANSI 256-color or 24-bit (RGB) escape codes.
+The palette leans toward a Claude-Code-like warm orange and sand direction
+while keeping enough contrast for long coding sessions.
 """
 
 from __future__ import annotations
@@ -21,32 +21,27 @@ def _rgb_bg(r: int, g: int, b: int) -> str:
 
 @dataclass(frozen=True)
 class ColorTheme:
-    """Morandi-inspired color theme (muted, low-saturation tones)."""
+    """Warm terminal theme for Astrid."""
 
-    # Section borders / frames
-    header: str        # Workspace header border
-    session: str       # Session feed border
-    input: str         # Input box border
-    approval: str      # Approval dialog border
+    header: str
+    session: str
+    input: str
+    approval: str
 
-    # Message kinds
-    user: str          # User messages
-    assistant: str     # Assistant messages
-    progress: str      # Progress messages
-    tool: str          # Tool messages
-    tool_error: str    # Tool error messages
+    user: str
+    assistant: str
+    progress: str
+    tool: str
+    tool_error: str
 
-    # UI chrome
-    command_highlight_bg: str   # Slash command highlight background
-    expandable: str             # [展开]/[收起] toggle text
+    command_highlight_bg: str
+    expandable: str
 
-    # Header label colors
-    header_label_info: str       # project / provider / model / auth labels
-    header_label_session: str    # session label
-    header_label_permissions: str  # permissions / cwd labels
-    header_label_recent: str     # recent tools label
+    header_label_info: str
+    header_label_session: str
+    header_label_permissions: str
+    header_label_recent: str
 
-    # Text utilities
     reset: str = "\x1b[0m"
     bold: str = "\x1b[1m"
     dim: str = "\x1b[2m"
@@ -54,49 +49,40 @@ class ColorTheme:
     underline: str = "\x1b[4m"
     reverse: str = "\x1b[7m"
 
-    # Semantic aliases
-    subtle: str = "\x1b[38;5;243m"    # gray for subtle/secondary text
-    border: str = "\x1b[38;5;39m"     # bright blue (legacy panel borders)
-    border_dim: str = "\x1b[38;5;24m" # secondary border
-    accent: str = "\x1b[38;5;214m"    # warm orange accent
-    accent2: str = "\x1b[38;5;141m"   # soft purple accent
-    highlight_bg: str = "\x1b[48;5;236m"  # dark selection background
+    subtle: str = "\x1b[38;5;243m"
+    border: str = "\x1b[38;5;173m"
+    border_dim: str = "\x1b[38;5;130m"
+    accent: str = "\x1b[38;5;215m"
+    accent2: str = "\x1b[38;5;180m"
+    highlight_bg: str = "\x1b[48;5;236m"
 
 
 def _default_theme() -> ColorTheme:
-    """Build the default Morandi color theme."""
+    """Build the default warm orange theme."""
     return ColorTheme(
-        # Section borders — Morandi tones
-        header=_rgb(120, 150, 140),      # muted teal
-        session=_rgb(140, 120, 160),     # muted purple
-        input=_rgb(130, 160, 100),       # muted sage green
-        approval=_rgb(170, 110, 110),    # muted mauve
-
-        # Message kinds
-        user=_rgb(160, 130, 100),        # muted warm brown
-        assistant=_rgb(100, 150, 150),   # muted teal-cyan
-        progress=_rgb(170, 150, 90),     # muted mustard
-        tool=_rgb(140, 100, 160),        # muted purple-plum
-        tool_error=_rgb(180, 100, 100),  # muted rose
-
-        # UI chrome
-        command_highlight_bg=_rgb_bg(100, 110, 140),  # muted slate-blue bg
-        expandable=_rgb(110, 150, 150),  # muted cyan-gray
-
-        # Header labels
-        header_label_info=_rgb(170, 150, 100),        # muted ochre
-        header_label_session=_rgb(160, 120, 100),     # muted terracotta
-        header_label_permissions=_rgb(130, 100, 160), # muted plum
-        header_label_recent=_rgb(130, 100, 160),      # same as permissions
+        header=_rgb(202, 126, 74),
+        session=_rgb(184, 115, 70),
+        input=_rgb(216, 142, 81),
+        approval=_rgb(191, 96, 74),
+        user=_rgb(177, 112, 67),
+        assistant=_rgb(215, 162, 104),
+        progress=_rgb(232, 167, 88),
+        tool=_rgb(194, 138, 86),
+        tool_error=_rgb(204, 92, 72),
+        command_highlight_bg=_rgb_bg(96, 63, 44),
+        expandable=_rgb(226, 170, 107),
+        header_label_info=_rgb(211, 164, 110),
+        header_label_session=_rgb(189, 125, 86),
+        header_label_permissions=_rgb(170, 129, 98),
+        header_label_recent=_rgb(170, 129, 98),
     )
 
 
-# Module-level singleton
 _THEME: ColorTheme | None = None
 
 
 def theme() -> ColorTheme:
-    """Return the global ColorTheme instance (created once)."""
+    """Return the global ColorTheme instance."""
     global _THEME
     if _THEME is None:
         _THEME = _default_theme()

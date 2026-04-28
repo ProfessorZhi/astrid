@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 
 from astrid.types import AgentStep
@@ -18,6 +19,35 @@ def _latest_assistant_call(messages):
     return call["toolName"] if call else None
 
 
+_CREATE_FILE_PATTERN = re.compile(
+    r"(?:create|write)\s+([^\s]+)\s+with\s+(.+?)\s+in\s+it\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _extract_natural_language_write(text: str) -> tuple[str, str] | None:
+    match = _CREATE_FILE_PATTERN.search(text)
+    if not match:
+        return None
+    path = match.group(1).strip().strip("'\"")
+    content = re.sub(r"\s+", " ", match.group(2)).strip().strip("'\"")
+    content = content.rstrip(".。")
+    if not path or not content:
+        return None
+    return path, content
+
+
+def _detect_worker_role(text: str) -> str | None:
+    lowered = text.lower()
+    if "your role: context scout" in lowered:
+        return "context_scout"
+    if "your role: code worker" in lowered:
+        return "code_worker"
+    if lowered.startswith("review the following worker results"):
+        return "reviewer"
+    return None
+
+
 class MockModelAdapter:
     def next(self, messages):
         tool_message = _last_tool_message(messages)
@@ -33,6 +63,7 @@ class MockModelAdapter:
 
         user_text = _last_user_message(messages).strip()
         tool_id = f"mock-{int(time.time() * 1000)}"
+        role = _detect_worker_role(user_text)
 
         if user_text == "/tools":
             return AgentStep(
@@ -104,6 +135,35 @@ class MockModelAdapter:
             return AgentStep(
                 type="tool_calls",
                 calls=[{"id": tool_id, "toolName": "patch_file", "input": {"path": target_path.strip(), "replacements": replacements}}],
+            )
+
+        natural_language_write = _extract_natural_language_write(user_text)
+        if role == "context_scout":
+            return AgentStep(
+                type="tool_calls",
+                calls=[{"id": tool_id, "toolName": "list_files", "input": {}}],
+            )
+
+        if role == "reviewer":
+            risk = "medium"
+            confidence = "medium"
+            lowered = user_text.lower()
+            if "failed" in lowered or "error" in lowered:
+                risk = "high"
+                confidence = "low"
+            if "completed" in lowered and "failed" not in lowered and "error" not in lowered:
+                risk = "low"
+                confidence = "high"
+            return AgentStep(
+                type="assistant",
+                content=f"Review verdict: {risk} risk, {confidence} confidence. Main outputs are coherent and ready for merge.",
+            )
+
+        if natural_language_write is not None:
+            target_path, content = natural_language_write
+            return AgentStep(
+                type="tool_calls",
+                calls=[{"id": tool_id, "toolName": "write_file", "input": {"path": target_path, "content": content}}],
             )
 
         return AgentStep(

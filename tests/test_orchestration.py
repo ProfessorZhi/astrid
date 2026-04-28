@@ -5,10 +5,13 @@ from astrid.orchestration import (
     archive_worker,
     create_runtime,
     get_phase_label,
+    get_phase_verb,
     mark_review_required,
     mark_worker_reported,
     request_spawn,
+    sample_spinner_verb,
 )
+from astrid.orchestration_verbs import get_phase_verbs
 
 
 def test_runtime_transitions_from_planning_to_spawning() -> None:
@@ -61,3 +64,39 @@ def test_get_phase_label_maps_runtime_states_to_short_ui_labels() -> None:
     assert get_phase_label(TaskRuntimeState.SPAWNING) == "dispatching"
     assert get_phase_label(TaskRuntimeState.REVIEWING) == "reviewing"
     assert get_phase_label(TaskRuntimeState.DONE) == "standing by"
+
+
+def test_phase_verbs_are_stable_and_contextual() -> None:
+    assert get_phase_verb(TaskRuntimeState.PLANNING) != ""
+    assert get_phase_verb(TaskRuntimeState.SPAWNING) != get_phase_verb(TaskRuntimeState.REVIEWING)
+    assert get_phase_verb(TaskRuntimeState.DONE) == "Ready"
+
+
+def test_phase_verb_uses_elapsed_for_enter_and_steady_transitions() -> None:
+    assert get_phase_verb(TaskRuntimeState.SPAWNING, animation_frame=0, elapsed=0.1) == "Dispatching"
+    assert get_phase_verb(TaskRuntimeState.SPAWNING, animation_frame=0, elapsed=1.0) == "Assigning"
+
+
+def test_sample_spinner_verb_is_deterministic_per_seed() -> None:
+    assert sample_spinner_verb(TaskRuntimeState.REVIEWING, "Hegel") == sample_spinner_verb(
+        TaskRuntimeState.REVIEWING, "Hegel"
+    )
+    assert sample_spinner_verb(TaskRuntimeState.REVIEWING, "Hegel") != sample_spinner_verb(
+        TaskRuntimeState.REVIEWING, "Russell"
+    )
+
+
+def test_phase_verbs_support_append_and_replace_overrides(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "ASTRID_SPINNER_VERBS",
+        '{"mode":"append","phases":{"reviewing":["Auditing"]}}',
+    )
+    reviewing = get_phase_verbs("reviewing")
+    assert "Reviewing" in reviewing
+    assert "Auditing" in reviewing
+
+    monkeypatch.setenv(
+        "ASTRID_SPINNER_VERBS",
+        '{"mode":"replace","phases":{"reviewing":["Auditing"]}}',
+    )
+    assert get_phase_verbs("reviewing") == ("Auditing",)

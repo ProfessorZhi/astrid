@@ -193,6 +193,31 @@ class PermissionManager:
     def end_turn(self) -> None:
         self.begin_turn()
 
+    def fork_for_subagent(self) -> "PermissionManager":
+        """Clone session/persistent permissions for an isolated sub-agent turn.
+
+        Turn-scoped edit grants are intentionally reset so one worker cannot
+        inherit another worker's temporary edit approval.
+        """
+        clone = PermissionManager.__new__(PermissionManager)
+        clone.workspace_root = self.workspace_root
+        clone.prompt = self.prompt
+        clone.allowed_directory_prefixes = set(self.allowed_directory_prefixes)
+        clone.denied_directory_prefixes = set(self.denied_directory_prefixes)
+        clone.session_allowed_paths = set(self.session_allowed_paths)
+        clone.session_denied_paths = set(self.session_denied_paths)
+        clone.allowed_command_patterns = set(self.allowed_command_patterns)
+        clone.denied_command_patterns = set(self.denied_command_patterns)
+        clone.session_allowed_commands = set(self.session_allowed_commands)
+        clone.session_denied_commands = set(self.session_denied_commands)
+        clone.allowed_edit_patterns = set(self.allowed_edit_patterns)
+        clone.denied_edit_patterns = set(self.denied_edit_patterns)
+        clone.session_allowed_edits = set(self.session_allowed_edits)
+        clone.session_denied_edits = set(self.session_denied_edits)
+        clone.turn_allowed_edits = set()
+        clone.turn_allow_all_edits = False
+        return clone
+
     def get_summary(self) -> list[str]:
         summary = [f"cwd: {self.workspace_root}"]
         summary.append(

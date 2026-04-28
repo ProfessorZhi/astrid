@@ -24,23 +24,11 @@ def render_input_prompt(current_input: str, cursor_offset: int, compact: bool = 
 
     placeholder = (
         "" if current_input
-        else f"{ITALIC} Type a message or /help for commands{RESET}"
+        else f"{ITALIC} msg or /help{RESET}"
     )
 
     # Prompt: "astrid> " prefix (matches Rust render_screen)
     prefix = f"{t.input}{BOLD}astrid>{RESET} "
-    input_line = f" {prefix}{before}{HIGHLIGHT_BG}{BRIGHT_GREEN}{current}{RESET}{after}{DIM}{placeholder}{RESET}"
+    input_line = f"{prefix}{before}{HIGHLIGHT_BG}{BRIGHT_GREEN}{current}{RESET}{after}{DIM}{placeholder}{RESET}"
 
-    if compact:
-        return input_line
-
-    # Hint bar
-    key_enter = f"{t.subtle}[{RESET}{DIM}Enter{RESET}{t.subtle}]{RESET} {t.subtle}send{RESET}"
-    key_help = f"{t.subtle}[{RESET}{DIM}/help{RESET}{t.subtle}]{RESET} {t.subtle}cmds{RESET}"
-    key_esc = f"{t.subtle}[{RESET}{DIM}Esc{RESET}{t.subtle}]{RESET} {t.subtle}clear{RESET}"
-    key_exit = f"{t.subtle}[{RESET}{DIM}^C{RESET}{t.subtle}]{RESET} {t.subtle}exit{RESET}"
-
-    line1 = f"  {key_enter}  {key_help}  {key_esc}  {key_exit}"
-    line2 = ""
-
-    return "\n".join([line1, line2, input_line])
+    return input_line

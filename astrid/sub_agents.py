@@ -294,6 +294,11 @@ class SubAgentManager:
 
         registry = self._filter_tools_for_agent(instance, tools)
         messages = self._ensure_task_prompt(instance)
+        worker_permissions = (
+            permissions.fork_for_subagent()
+            if permissions is not None and hasattr(permissions, "fork_for_subagent")
+            else permissions
+        )
 
         try:
             result_messages = run_agent_turn(
@@ -301,7 +306,7 @@ class SubAgentManager:
                 tools=registry,
                 messages=messages,
                 cwd=cwd,
-                permissions=permissions,
+                permissions=worker_permissions,
                 max_steps=max_steps or instance.definition.max_turns,
                 on_tool_start=on_tool_start,
                 on_tool_result=on_tool_result,
@@ -318,13 +323,25 @@ class SubAgentManager:
         instance.messages = result_messages
         instance.turn_count += 1
 
+        last_tool_result = next(
+            (
+                message
+                for message in reversed(result_messages)
+                if message.get("role") == "tool_result"
+            ),
+            None,
+        )
         assistant_messages = [
             message
             for message in result_messages
             if message.get("role") == "assistant"
         ]
         final_output = assistant_messages[-1]["content"] if assistant_messages else ""
-        self.complete_agent(agent_id, final_output)
+        if last_tool_result is not None and last_tool_result.get("isError"):
+            failure_output = final_output or str(last_tool_result.get("content", "Agent execution failed."))
+            self.fail_agent(agent_id, failure_output)
+        else:
+            self.complete_agent(agent_id, final_output)
         self._refresh_result_summary(instance)
         return instance
     
@@ -352,7 +369,7 @@ class SubAgentManager:
         instance.completed_at = time.time()
         self._refresh_result_summary(instance)
 
-        return False
+        return True
     
     def cancel_agent(self, agent_id: str) -> bool:
         """Cancel a running agent."""
@@ -425,11 +442,12 @@ class SubAgentManager:
             return f"Agent {agent_id} not found."
 
         summary = instance.result_summary or self._build_result_summary(instance)
+        status_label = summary["status"]
 
         lines = [
-            f"[Sub-agent {instance.definition.name} completed]",
+            f"[Sub-agent {instance.definition.name} {status_label}]",
             f"  Turns: {summary['turn_count']}",
-            f"  Status: {summary['status']}",
+            f"  Status: {status_label}",
         ]
 
         if summary["final_output"]:

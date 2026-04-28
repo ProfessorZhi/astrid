@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import threading
 from dataclasses import asdict, dataclass
@@ -23,6 +24,7 @@ ALLOWED_COMMANDS = {
 
 
 JsonRpcProtocol = str
+DEFAULT_MCP_INITIALIZE_TIMEOUT_SECONDS = 15.0
 
 
 @dataclass(slots=True)
@@ -41,6 +43,22 @@ def _sanitize_tool_segment(value: str) -> str:
     normalized = "".join(char.lower() if char.isalnum() or char in {"_", "-"} else "_" for char in value)
     normalized = normalized.strip("_")
     return normalized or "tool"
+
+
+def _has_directory_prefix(path_value: str, directory: str) -> bool:
+    normalized_path = path_value.replace("\\", "/").rstrip("/")
+    normalized_directory = directory.replace("\\", "/").rstrip("/")
+    if os.name == "nt":
+        normalized_path = normalized_path.lower()
+        normalized_directory = normalized_directory.lower()
+    return normalized_path == normalized_directory or normalized_path.startswith(normalized_directory + "/")
+
+
+def _decode_json_payload(payload: bytes) -> dict[str, Any]:
+    text = payload.decode("utf-8-sig")
+    if text.startswith("\ufeff"):
+        text = text.lstrip("\ufeff")
+    return json.loads(text)
 
 
 def _validate_mcp_command(command: str) -> None:
@@ -83,7 +101,8 @@ def _validate_mcp_command(command: str) -> None:
                 'C:\\Windows\\System32',
             ])
         
-        is_in_allowed_dir = any(normalized.lower().startswith(d.lower()) for d in allowed_system_dirs)
+        normalized_allowed_dirs = [directory.replace("\\", "/").rstrip("/") for directory in allowed_system_dirs]
+        is_in_allowed_dir = any(_has_directory_prefix(normalized, directory) for directory in normalized_allowed_dirs)
         
         # 不在允许的系统目录且不在白名单中
         if not is_in_allowed_dir and base_command not in ALLOWED_COMMANDS:
@@ -119,6 +138,20 @@ def _validate_mcp_args(args: list[str]) -> None:
                     f"Invalid MCP argument: contains dangerous shell character '{char}'. "
                     f"MCP server arguments cannot contain shell metacharacters for security reasons."
                 )
+
+
+def _resolve_mcp_command(command: str) -> str:
+    if os.name != "nt":
+        return command
+    if Path(command).is_absolute():
+        return command
+    resolved = shutil.which(command)
+    if resolved:
+        return resolved
+    resolved_cmd = shutil.which(f"{command}.cmd")
+    if resolved_cmd:
+        return resolved_cmd
+    return command
 
 
 def _normalize_input_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
@@ -227,7 +260,7 @@ class StdioMcpClient:
                         "capabilities": {},
                         "clientInfo": {"name": "astrid", "version": "0.1.0"},
                     },
-                    timeout_seconds=2.0,
+                    timeout_seconds=DEFAULT_MCP_INITIALIZE_TIMEOUT_SECONDS,
                 )
                 self.notify("notifications/initialized", {})
                 return
@@ -257,9 +290,10 @@ class StdioMcpClient:
             # Prevent a console window from popping up for the child process
             CREATE_NO_WINDOW = 0x08000000
             popen_kwargs["creationflags"] = CREATE_NO_WINDOW
+        resolved_command = _resolve_mcp_command(command)
         try:
             self.process = subprocess.Popen(  # noqa: S603
-                [command, *list(self.config.get("args", []) or [])],
+                [resolved_command, *list(self.config.get("args", []) or [])],
                 cwd=str(process_cwd),
                 env=env,
                 stdin=subprocess.PIPE,
@@ -303,7 +337,7 @@ class StdioMcpClient:
                     break
 
                 try:
-                    line = line_bytes.decode("utf-8")
+                    line = line_bytes.decode("utf-8-sig")
                 except UnicodeDecodeError:
                     continue
 
@@ -320,7 +354,7 @@ class StdioMcpClient:
 
                 if self.protocol == "newline-json":
                     try:
-                        self._handle_message(json.loads(stripped))
+                        self._handle_message(_decode_json_payload(stripped.encode("utf-8")))
                     except json.JSONDecodeError:
                         continue
                 else:
@@ -354,7 +388,7 @@ class StdioMcpClient:
                         if len(body_bytes) < content_length:
                             return
                         try:
-                            self._handle_message(json.loads(body_bytes.decode("utf-8")))
+                            self._handle_message(_decode_json_payload(body_bytes))
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
         finally:

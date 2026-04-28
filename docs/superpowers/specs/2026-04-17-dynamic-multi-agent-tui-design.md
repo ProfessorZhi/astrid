@@ -115,6 +115,7 @@ The TUI direction is:
 
 - **Structure like option B**
 - **Visual lightness closer to option A**
+- **Default idle surface closer to Claude Code's welcome workbench**
 
 This means:
 
@@ -123,7 +124,10 @@ This means:
 - not overly dense sidebars
 - not full-width color blocks
 
-Instead the TUI should feel like a living narrative surface with a visible agent tree.
+Instead the TUI should feel like:
+
+- a composed orange-toned welcome workbench in idle state
+- a living narrative surface with a visible agent tree in active state
 
 ---
 
@@ -234,6 +238,13 @@ Simple tasks should stay single-agent.
 
 ## 7. TUI Design
 
+Astrid should explicitly separate:
+
+- `idle / welcome view`
+- `active / work view`
+
+These two modes should not share the exact same layout. The welcome surface is optimized for first impression and orientation. The work surface is optimized for transcript, orchestration, and tool visibility.
+
 ### 7.1 Narrative Surface
 
 The top-level interface should preserve a Claude-Code-like feeling of light, flowing progress.
@@ -247,7 +258,41 @@ Examples:
 
 This line should be short and singular. It represents the system's current main story.
 
-### 7.2 Agent Tree
+The first version should also introduce a lightweight animated progress treatment:
+
+- phase labels should pulse or spin rather than remain visually static
+- orchestration rows should show a compact progress bar derived from worker completion
+- active workers should feel "alive" even when no new tool event has arrived yet
+
+This must stay subtle. The goal is breathing motion, not dashboard noise.
+
+### 7.2 Welcome Workbench
+
+The default idle screen should be redesigned into a Claude-Code-like orange welcome workbench.
+
+Layout:
+
+- a lightweight brand/version line at the top
+- a central bordered welcome card
+- left and right split columns inside the card
+- a single-line input area below
+- a lightweight bottom status line
+
+Left column:
+
+- `Welcome back`
+- animated buddy sprite
+- current model
+- current workspace
+
+Right column:
+
+- `Tips for getting started`
+- `Recent activity`
+
+This welcome workbench appears only when the session is idle or freshly cleared.
+
+### 7.3 Agent Tree
 
 The central visual element is a runtime agent tree, not a dashboard grid.
 
@@ -258,13 +303,77 @@ Each row should show:
 - one-line mission
 - status
 
+### 7.4 Welcome Companion / Buddy v2
+
+Astrid should add a Claude-Code-inspired buddy system, but only on the welcome/idle surface by default.
+
+Rules:
+
+- companion is **enabled by default**
+- companion appears on the welcome/idle surface, not as a permanent coding sidebar
+- the main transcript and orchestration view stay focused on coding work
+- users may summon, hide, or switch companions through slash commands at any time
+- the species set should mirror the current locally inspected Claude Code source set of **18 species**
+
+Initial species set:
+
+- `duck`
+- `goose`
+- `blob`
+- `cat`
+- `dragon`
+- `octopus`
+- `owl`
+- `penguin`
+- `turtle`
+- `snail`
+- `ghost`
+- `axolotl`
+- `capybara`
+- `cactus`
+- `robot`
+- `rabbit`
+- `mushroom`
+- `chonk`
+
+Buddy v2 behavior:
+
+- multi-frame sprite rendering
+- idle animation loop
+- small fidget variation
+- blink frame
+- species switching without restarting the app
+
+The initial command surface should support:
+
+- `/pet show`
+- `/pet hide`
+- `/pet next`
+- `/pet switch <species>`
+- `/pet list`
+
+If invoked during an active session, these commands should render a lightweight preview in the transcript without permanently pinning the buddy into the main work area.
+
+### 7.5 Companion Scope
+
+The companion is a product identity feature, not a workflow controller.
+
+Therefore:
+
+- it does not own orchestration state
+- it does not alter agent decisions
+- it does not appear inside worker trees
+- it does not replace the main status line
+
+It is purely a welcome/idle affordance plus an optional summoned preview.
+
 Example:
 
 - `Atlas     context scout    mapping auth and routing flow       running`
 - `Forge     code worker      editing worker lifecycle hooks      running`
 - `Meridian  review agent     validating patch scope and tests    queued`
 
-### 7.3 Event Stream
+### 7.6 Event Stream
 
 Each active worker may show a small number of recent events:
 
@@ -274,7 +383,27 @@ Each active worker may show a small number of recent events:
 
 This event stream should remain short-lived and compress into summaries over time.
 
-### 7.4 Color System
+### 7.7 Color System
+
+The default TUI palette should shift toward a Claude-Code-like orange theme in idle and shell chrome.
+
+Theme direction:
+
+- warm orange as the primary accent
+- muted warm gray for borders and secondary text
+- pale gray for inactive copy
+- orange-red for error
+- bright orange for active focus and progress
+
+This orange palette should define:
+
+- brand line
+- welcome card border
+- input focus
+- status bar highlights
+- orchestration phase emphasis
+
+The goal is not exact copying. The goal is to make Astrid feel visually coherent and much closer to the comfort of Claude Code's shell.
 
 Each worker has one accent color for identity.
 
@@ -293,7 +422,7 @@ Role-based color families:
 - review: cool blue / steel / silver-blue
 - orchestration support: muted violet / graphite blue
 
-### 7.5 Density Rules
+### 7.8 Density Rules
 
 The interface must remain light:
 
@@ -301,6 +430,23 @@ The interface must remain light:
 - archived workers collapse into compact summaries
 - too many simultaneous workers are folded into `+N archived workers`
 - logs are compressed aggressively
+
+### 7.9 View Switching Rules
+
+The welcome workbench should appear only in these situations:
+
+- fresh session with no transcript
+- explicitly cleared session
+- idle surface after reset
+
+The system should switch to work view when:
+
+- the user submits a normal prompt
+- a tool starts running
+- orchestration starts
+- an existing transcript is restored
+
+This keeps the welcome screen as a first-impression surface rather than a permanent shell dashboard.
 
 ---
 
@@ -379,12 +525,37 @@ After the task board is stable, add:
 
 This phase must remain bounded and should not allow uncontrolled free-form delegation.
 
+### Future Optimization Target: Nested Delegation
+
+After limited swarm / handoff is proven stable, explore:
+
+- worker-created worker delegation
+- nested sub-agent spawning under orchestrator governance
+- recursive delegation only within explicit depth and scope limits
+
+This is inspired by the broader OpenAI agent/workflow direction around multi-step routing and specialized-agent handoff, but it is **not** a current Astrid v1 or Phase 2 promise.
+
+If implemented later, it must satisfy all of the following:
+
+- the top-level orchestrator still remains the authority
+- delegation depth is capped
+- each nested worker inherits constrained scope, not global freedom
+- TUI must preserve visibility of lineage
+- review and archival remain mandatory
+
+In short, nested delegation is a future controlled capability, not an unrestricted recursive swarm.
+
 ---
 
 ## 10. Testing Strategy
 
 The first version needs test coverage for:
 
+- idle/welcome view rendering
+- welcome/work view switching
+- buddy species switching
+- buddy command handling
+- buddy frame progression
 - worker spawning rules
 - runtime state transitions
 - reviewer-trigger policy
@@ -410,4 +581,3 @@ This design is chosen because it solves the real weakness in Astrid's current st
 In short:
 
 Astrid v1 should feel like a composed orchestrated coding system, not a single-agent shell with decorative sub-agent labels.
-

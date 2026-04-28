@@ -269,8 +269,8 @@ def test_bootstrap_persistence():
         records_count2 = len(bootstrap_system2.bootstrap_records)
         print(f"重新启动后记录数: {records_count2}")
         
-        # 验证持久化
-        assert records_count2 >= records_count1, "重新启动后应该加载之前的记录"
+        # 验证持久化（系统只保留最近100条记录）
+        assert records_count2 >= min(records_count1, 100), "重新启动后应该加载之前保留下来的记录"
         
         # 检查记录完整性
         if bootstrap_system2.bootstrap_records:

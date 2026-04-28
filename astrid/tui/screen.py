@@ -6,6 +6,8 @@ import sys
 ENTER_ALT_SCREEN = "\u001b[?1049h"
 EXIT_ALT_SCREEN = "\u001b[?1049l"
 ERASE_SCREEN_AND_HOME = "\u001b[2J\u001b[H"
+DISABLE_ALTERNATE_SCROLL = "\u001b[?1007l"
+ENABLE_ALTERNATE_SCROLL = "\u001b[?1007h"
 # Mouse tracking sequence breakdown:
 #   ?1000h  — basic X10 mouse reporting (button press/release)
 #   ?1002h  — button-event tracking (only reports while button pressed, can interfere)
@@ -18,7 +20,7 @@ ENABLE_MOUSE_TRACKING = "\u001b[?1000h\u001b[?1003h\u001b[?1006h"
 DISABLE_MOUSE_TRACKING = "\u001b[?1006l\u001b[?1003l\u001b[?1000l"
 
 # Terminal types that do not support alternate screen or mouse tracking.
-_DUMB_TERMS = frozenset({"dumb", "linux", ""})
+_DUMB_TERMS = frozenset({"dumb", "linux"})
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +99,54 @@ def show_cursor() -> None:
 
 def _is_dumb_terminal() -> bool:
     """Return True if the terminal likely doesn't support escape sequences."""
-    return os.environ.get("TERM", "") in _DUMB_TERMS
+    isatty = getattr(sys.stdout, "isatty", None)
+    if callable(isatty) and not isatty():
+        return True
+    term = os.environ.get("TERM")
+    if term is None:
+        return False
+    return term.lower() in _DUMB_TERMS
+
+
+def _should_use_alternate_screen() -> bool:
+    """Return True when the dedicated alt buffer should be used.
+
+    Windows defaults to the alternate buffer so the interactive UI does not
+    write directly into the host shell scrollback. Users can override with
+    ASTRID_ALT_SCREEN=1 or ASTRID_ALT_SCREEN=0.
+    """
+    override = os.environ.get("ASTRID_ALT_SCREEN")
+    if override is not None:
+        normalized = override.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return _terminal_mode() == "tui"
+
+
+def _terminal_mode() -> str:
+    mode = os.environ.get("ASTRID_TERMINAL_MODE", "tui").strip().lower()
+    if mode == "agent":
+        return "tui"
+    return mode if mode in {"tui", "shell"} else "tui"
+
+
+def _is_mouse_tracking_enabled() -> bool:
+    override = os.environ.get("ASTRID_ENABLE_MOUSE")
+    if override is not None:
+        normalized = override.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    if sys.platform == "win32":
+        return False
+    return True
+
+
+def _should_capture_mouse() -> bool:
+    return _terminal_mode() == "tui" and _is_mouse_tracking_enabled()
 
 
 def enter_alternate_screen() -> None:
@@ -106,14 +155,31 @@ def enter_alternate_screen() -> None:
         # Dumb terminals (e.g. 'linux' console, 'dumb', piped output)
         # don't support alternate screen or mouse tracking.
         return
-    sys.stdout.write(DISABLE_MOUSE_TRACKING + ENTER_ALT_SCREEN + ERASE_SCREEN_AND_HOME + ENABLE_MOUSE_TRACKING)
+    sequence = ""
+    if _should_use_alternate_screen():
+        sequence += ENTER_ALT_SCREEN + ERASE_SCREEN_AND_HOME
+    if _terminal_mode() == "tui":
+        # Always disable terminal alternate-scroll rewrite in interactive TUI mode.
+        # Otherwise some Windows terminals translate wheel input into Up/Down keys,
+        # which collides with Astrid's history/slash navigation handlers.
+        sequence += DISABLE_ALTERNATE_SCROLL
+    if _should_capture_mouse():
+        sequence += DISABLE_MOUSE_TRACKING + ENABLE_MOUSE_TRACKING
+    sys.stdout.write(sequence)
     sys.stdout.flush()
 
 
 def exit_alternate_screen() -> None:
     if _is_dumb_terminal():
         return
-    sys.stdout.write(DISABLE_MOUSE_TRACKING + EXIT_ALT_SCREEN)
+    sequence = ""
+    if _should_capture_mouse():
+        sequence += DISABLE_MOUSE_TRACKING
+    if _terminal_mode() == "tui":
+        sequence += ENABLE_ALTERNATE_SCROLL
+    if _should_use_alternate_screen():
+        sequence += EXIT_ALT_SCREEN
+    sys.stdout.write(sequence)
     sys.stdout.flush()
 
 

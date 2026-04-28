@@ -15,7 +15,7 @@ BRIGHT_CYAN = "\u001b[96m"
 BRIGHT_YELLOW = "\u001b[93m"
 SUBTLE = "\u001b[38;5;243m"
 CODE_BG = "\u001b[48;5;236m"    # dark bg for code
-CODE_FG = "\u001b[38;5;215m"    # warm amber for inline code
+CODE_FG = "\u001b[38;5;180m"    # muted sand for inline code
 QUOTE_BAR = "\u001b[38;5;243m"  # subtle gray for blockquote
 HEADING_ACCENT = "\u001b[38;5;39m"  # bright blue for headings
 
@@ -37,7 +37,7 @@ _RE_INLINE_COMBINED = re.compile(
 def _inline_replace(m: re.Match) -> str:
     """Single-pass replacement callback for inline markdown."""
     if m.group(1) is not None:
-        return f"{CODE_BG}{CODE_FG}{m.group(1)}{RESET}"
+        return f"{DIM}{CODE_FG}{m.group(1)}{RESET}"
     if m.group(2) is not None:
         return f"{BOLD}{m.group(2)}{RESET}"
     if m.group(3) is not None:

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import hashlib
 import itertools
+import time
+
+from astrid.orchestration_verbs import get_phase_verbs
 
 
 class TaskRuntimeState(str, Enum):
@@ -53,7 +57,6 @@ _PHASE_LABELS: dict[TaskRuntimeState, str] = {
     TaskRuntimeState.FAILED: "blocked",
 }
 
-
 _WORKER_IDS = itertools.count(1)
 
 
@@ -70,6 +73,7 @@ class WorkerRuntimeRecord:
     state: WorkerRuntimeState = WorkerRuntimeState.QUEUED
     latest_event: str = ""
     result: str = ""
+    spinner_verb: str = "Working"
 
 
 @dataclass(slots=True)
@@ -82,6 +86,7 @@ class OrchestratorState:
     workers: dict[str, WorkerRuntimeRecord] = field(default_factory=dict)
     review_required: bool = False
     last_review_summary: str = ""
+    phase_started_at: float = field(default_factory=time.monotonic)
 
     def spawn_worker(
         self,
@@ -104,10 +109,10 @@ class OrchestratorState:
             color=color,
             state=WorkerRuntimeState.QUEUED,
             latest_event="spawned",
+            spinner_verb=sample_spinner_verb(self.task_state, name),
         )
         self.workers[worker_id] = record
-        self.task_state = TaskRuntimeState.RUNNING
-        self.narrative = f"{name} queued for {role.value}."
+        set_phase(self, TaskRuntimeState.RUNNING, f"{name} queued for {role.value}.")
         return record
 
 
@@ -120,8 +125,7 @@ def create_runtime(root_goal: str) -> OrchestratorState:
 def request_spawn(runtime: OrchestratorState) -> None:
     """Move the runtime into spawn planning."""
 
-    runtime.task_state = TaskRuntimeState.SPAWNING
-    runtime.narrative = "Spawning workers for the task graph..."
+    set_phase(runtime, TaskRuntimeState.SPAWNING, "Spawning workers for the task graph...")
 
 
 def mark_worker_reported(runtime: OrchestratorState, worker_id: str, result: str) -> None:
@@ -131,8 +135,7 @@ def mark_worker_reported(runtime: OrchestratorState, worker_id: str, result: str
     worker.state = WorkerRuntimeState.REPORTING
     worker.result = result
     worker.latest_event = "reported"
-    runtime.task_state = TaskRuntimeState.COLLECTING
-    runtime.narrative = f"Collecting reports from {worker.name}..."
+    set_phase(runtime, TaskRuntimeState.COLLECTING, f"Collecting reports from {worker.name}...")
 
 
 def mark_review_required(runtime: OrchestratorState, reviewer_summary: str = "") -> None:
@@ -140,8 +143,7 @@ def mark_review_required(runtime: OrchestratorState, reviewer_summary: str = "")
 
     runtime.review_required = True
     runtime.last_review_summary = reviewer_summary
-    runtime.task_state = TaskRuntimeState.REVIEWING
-    runtime.narrative = "Reviewing worker output..."
+    set_phase(runtime, TaskRuntimeState.REVIEWING, "Reviewing worker output...")
 
 
 def archive_worker(runtime: OrchestratorState, worker_id: str) -> None:
@@ -152,14 +154,47 @@ def archive_worker(runtime: OrchestratorState, worker_id: str) -> None:
     worker.latest_event = "archived"
 
     if all(record.state == WorkerRuntimeState.ARCHIVED for record in runtime.workers.values()):
-        runtime.task_state = TaskRuntimeState.DONE
-        runtime.narrative = "All workers archived."
+        set_phase(runtime, TaskRuntimeState.DONE, "All workers archived.")
+
+
+def set_phase(runtime: OrchestratorState, task_state: TaskRuntimeState, narrative: str) -> None:
+    runtime.task_state = task_state
+    runtime.narrative = narrative
+    runtime.phase_started_at = time.monotonic()
 
 
 def get_phase_label(task_state: TaskRuntimeState) -> str:
     """Return the short lowercase label used by the TUI header line."""
 
     return _PHASE_LABELS.get(task_state, "coordinating")
+
+
+def get_phase_verb(task_state: TaskRuntimeState, animation_frame: int = 0, elapsed: float | None = None) -> str:
+    """Return the user-facing progress verb for a task state."""
+
+    verbs = get_phase_verbs(task_state.value)
+    if not verbs:
+        return "Coordinating"
+    if elapsed is None:
+        return verbs[animation_frame % len(verbs)]
+    if elapsed < 0.75:
+        return verbs[0]
+    if len(verbs) == 1:
+        return verbs[0]
+    if elapsed < 2.0:
+        return verbs[min(1, len(verbs) - 1)]
+    if len(verbs) == 2:
+        return verbs[1]
+    tail = verbs[2:]
+    return tail[animation_frame % len(tail)]
+
+
+def sample_spinner_verb(task_state: TaskRuntimeState, seed: str) -> str:
+    """Pick a stable verb for a runtime or worker based on a seed."""
+
+    verbs = get_phase_verbs(task_state.value)
+    digest = hashlib.sha256(f"{task_state.value}:{seed}".encode("utf-8")).digest()
+    return verbs[digest[0] % len(verbs)]
 
 
 __all__ = [
@@ -171,7 +206,10 @@ __all__ = [
     "archive_worker",
     "create_runtime",
     "get_phase_label",
+    "get_phase_verb",
     "mark_review_required",
     "mark_worker_reported",
     "request_spawn",
+    "sample_spinner_verb",
+    "set_phase",
 ]

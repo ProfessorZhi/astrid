@@ -89,6 +89,8 @@ def test_agent_turn_emits_callbacks() -> None:
     assert ("start", "echo") in events
     assert ("result", "echo") in events
     assert ("assistant", "done") in events
+    assert ("progress", "Planning the next step") in events
+    assert ("progress", "Received result from echo") in events
 
 
 def test_agent_turn_retries_empty_response_then_continues() -> None:
@@ -138,6 +140,42 @@ def test_agent_turn_handles_recoverable_pause_turn() -> None:
 
     assert messages[-1] == {"role": "assistant", "content": "done"}
     assert any("pause_turn" in event for event in progress_events)
+
+
+def test_agent_turn_emits_adapting_progress_after_tool_result() -> None:
+    def run_echo(input_data: dict, _context) -> ToolResult:
+        return ToolResult(ok=True, output=f"echo:{input_data['text']}")
+
+    registry = ToolRegistry(
+        [
+            ToolDefinition(
+                name="echo",
+                description="echo tool",
+                input_schema={"type": "object"},
+                validator=lambda value: value,
+                run=run_echo,
+            )
+        ]
+    )
+    model = ScriptedModel(
+        [
+            AgentStep(type="tool_calls", calls=[{"id": "1", "toolName": "echo", "input": {"text": "hi"}}]),
+            AgentStep(type="assistant", content="done"),
+        ]
+    )
+    progress_events: list[str] = []
+
+    run_agent_turn(
+        model=model,
+        tools=registry,
+        messages=[{"role": "system", "content": "sys"}],
+        cwd=".",
+        on_progress_message=progress_events.append,
+    )
+
+    assert "Planning the next step" in progress_events
+    assert "Received result from echo" in progress_events
+    assert "Adapting after the latest tool result" in progress_events
 
 
 def test_agent_turn_returns_fallback_after_repeated_empty_responses() -> None:

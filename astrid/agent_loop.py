@@ -286,6 +286,13 @@ def _run_agent_turn_impl(
     while max_steps is None or step < max_steps:
         step += 1
         next_step: AgentStep
+        if on_progress_message:
+            if step == 1 and not saw_tool_result:
+                on_progress_message("Planning the next step")
+            elif saw_tool_result:
+                on_progress_message("Adapting after the latest tool result")
+            else:
+                on_progress_message("Choosing the next step")
         try:
             next_step = model.next(current_messages)
         except KeyboardInterrupt:
@@ -453,6 +460,9 @@ def _run_agent_turn_impl(
                     "isError": not result.ok,
                 }
             )
+            if on_progress_message:
+                tool_status = "error" if not result.ok else "result"
+                on_progress_message(f"Received {tool_status} from {call['toolName']}")
             if result.awaitUser:
                 if on_assistant_message:
                     on_assistant_message(result.output)
