@@ -948,6 +948,18 @@ def test_render_welcome_pet_block_uses_solid_builtin_pet_for_builtin_species() -
     assert "Duck" in block
 
 
+def test_render_welcome_pet_block_ignores_busy_animation_frame() -> None:
+    state = ScreenState(history=[])
+    profile = build_buddy_profile("demo-seed", species_override="duck")
+
+    state.animation_frame = 0
+    first = _render_welcome_pet_block(state, profile)
+    state.animation_frame = 1
+    second = _render_welcome_pet_block(state, profile)
+
+    assert first == second
+
+
 def test_handle_input_pet_switch_unknown_species_reports_error() -> None:
     cwd = str(Path(".").resolve())
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})

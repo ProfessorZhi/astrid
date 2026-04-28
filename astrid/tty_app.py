@@ -773,7 +773,7 @@ def _render_welcome_pet_block(state: ScreenState, profile: BuddyProfile) -> str:
                     f"mode {state.imported_pet_mode} · source {state.imported_pet_source or 'unknown'}",
                 )
             )
-    return render_welcome_hero_profile_block(profile, state.buddy_runtime, state.animation_frame)
+    return render_welcome_hero_profile_block(profile, state.buddy_runtime, 0)
 
 
 def _handle_companion_command(state: ScreenState, input_text: str) -> str | None:
@@ -1304,7 +1304,7 @@ def _build_simple_page_flow_document(
         parts.extend(
             _split_rendered_lines(
                 f"{render_status_line(None)}\n\n"
-                f"{render_buddy_block(state.companion_species, state.animation_frame)}\n\n"
+                f"{render_buddy_block(state.companion_species, 0)}\n\n"
                 "Type a message or /help for commands."
             )
         )
