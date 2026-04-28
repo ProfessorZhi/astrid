@@ -111,9 +111,10 @@ def _is_dumb_terminal() -> bool:
 def _should_use_alternate_screen() -> bool:
     """Return True when the dedicated alt buffer should be used.
 
-    Windows defaults to the alternate buffer so the interactive UI does not
-    write directly into the host shell scrollback. Users can override with
-    ASTRID_ALT_SCREEN=1 or ASTRID_ALT_SCREEN=0.
+    The alternate buffer belongs to the explicit TUI mode. On Windows the
+    default stays in native scrollback because embedded terminals such as Codex
+    and Windows Terminal should keep wheel scrolling and selection as host
+    behavior unless the user opts into Astrid's full-screen UI.
     """
     override = os.environ.get("ASTRID_ALT_SCREEN")
     if override is not None:
@@ -132,9 +133,11 @@ def _is_codex_embedded_terminal() -> bool:
 
 def _terminal_mode() -> str:
     raw_mode = os.environ.get("ASTRID_TERMINAL_MODE")
-    if raw_mode is None and _is_codex_embedded_terminal():
-        return "shell"
-    mode = (raw_mode or "tui").strip().lower()
+    if raw_mode is None:
+        if sys.platform == "win32" or _is_codex_embedded_terminal():
+            return "shell"
+        return "tui"
+    mode = raw_mode.strip().lower()
     if mode == "agent":
         return "tui"
     return mode if mode in {"tui", "shell"} else "tui"

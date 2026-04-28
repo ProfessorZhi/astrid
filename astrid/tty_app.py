@@ -462,7 +462,12 @@ def _render_agent_frame_update(
 
 
 def _should_start_windows_wheel_fallback(terminal_mode: str) -> bool:
-    return terminal_mode in {"tui", "agent"}
+    return terminal_mode in {"tui", "agent"} and _should_capture_mouse()
+
+
+def _should_rotate_welcome_tips() -> bool:
+    value = os.environ.get("ASTRID_ROTATE_WELCOME_TIPS", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 def _render_busy_spinner(frame: int) -> str:
     spinner = _SINGLE_AGENT_BUSY_SPINNER_FRAMES[
@@ -3260,6 +3265,7 @@ def run_tty_app(
 
                 if (
                     terminal_mode != "shell"
+                    and _should_rotate_welcome_tips()
                     and
                     not state.is_busy
                     and state.orchestration is None
@@ -3315,7 +3321,7 @@ def run_tty_app(
                             time.sleep(_idle_poll_interval(terminal_mode))
                             continue
                         chunk = pipe_chunk
-                    elif windows_wheel_fallback is None:
+                    elif windows_wheel_fallback is None and _should_capture_mouse():
                         pending_windows_events: list[ParsedInputEvent] = []
                         while True:
                             win_event = _win_try_read_console_event()
@@ -3523,6 +3529,8 @@ def _handle_pending_approval_event(
             return
     
     if isinstance(event, WheelEvent):
+        if not _should_capture_mouse():
+            return
         state.wheel_debug_event_count += 1
         state.wheel_debug_last_direction = event.direction
         if _handle_pending_approval_wheel(state, event, rerender):
@@ -3606,6 +3614,8 @@ def _handle_pending_approval_wheel(
     rerender: Callable[[], None],
 ) -> bool:
     """Handle wheel events during pending approval for scrolling. Returns True if handled."""
+    if not _should_capture_mouse():
+        return False
     delta = 3 if event.direction == "up" else -3
     if _scroll_pending_approval_by(state, delta):
         rerender()
@@ -3930,6 +3940,8 @@ def _handle_normal_mode_wheel(
     rerender: Callable[[], None],
 ) -> bool:
     """Handle wheel events in normal mode for scrolling. Returns True if handled."""
+    if not _should_capture_mouse():
+        return False
     handled = _scroll_transcript_by(args, state, 3 if event.direction == "up" else -3)
     if handled:
         rerender()

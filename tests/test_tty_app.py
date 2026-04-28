@@ -12,6 +12,7 @@ from astrid.tty_app import (
     _handle_normal_mode_key,
     _render_agent_frame_update,
     _should_record_progress_entries,
+    _should_rotate_welcome_tips,
     _should_skip_agent_frame_update,
     _should_start_windows_wheel_fallback,
     _win_build_input_mode,
@@ -313,10 +314,28 @@ def test_build_agent_prompt_region_includes_busy_spinner_line() -> None:
     assert "progress" not in rendered
 
 
-def test_agent_mode_keeps_windows_wheel_fallback_enabled() -> None:
+def test_windows_wheel_fallback_requires_explicit_mouse_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr("astrid.tui.screen.sys.platform", "win32")
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
+    monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
+
+    assert _should_start_windows_wheel_fallback("agent") is False
+    assert _should_start_windows_wheel_fallback("tui") is False
+    assert _should_start_windows_wheel_fallback("shell") is False
+
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
+
     assert _should_start_windows_wheel_fallback("agent") is True
     assert _should_start_windows_wheel_fallback("tui") is True
     assert _should_start_windows_wheel_fallback("shell") is False
+
+
+def test_welcome_tip_rotation_is_opt_in(monkeypatch) -> None:
+    monkeypatch.delenv("ASTRID_ROTATE_WELCOME_TIPS", raising=False)
+    assert _should_rotate_welcome_tips() is False
+
+    monkeypatch.setenv("ASTRID_ROTATE_WELCOME_TIPS", "1")
+    assert _should_rotate_welcome_tips() is True
 
 
 def test_agent_mode_reuses_tui_animation_and_polling() -> None:
@@ -345,6 +364,17 @@ def test_codex_terminal_uses_shell_mode_for_tty_loop(monkeypatch) -> None:
     assert _terminal_mode_label() == "shell mode"
     assert _busy_animation_interval(_terminal_mode()) is None
     assert _render_throttle_interval(_terminal_mode()) >= 0.05
+
+
+def test_windows_terminal_defaults_to_shell_mode_for_tty_loop(monkeypatch) -> None:
+    from astrid.tty_app import _terminal_mode_label
+    from astrid.tui.screen import _terminal_mode
+
+    monkeypatch.setattr("astrid.tui.screen.sys.platform", "win32")
+    monkeypatch.delenv("ASTRID_TERMINAL_MODE", raising=False)
+
+    assert _terminal_mode() == "shell"
+    assert _terminal_mode_label() == "shell mode"
 
 
 def test_terminal_mode_label_treats_agent_as_tui_for_users(monkeypatch) -> None:
@@ -571,6 +601,7 @@ def test_handle_normal_mode_wheel_scrolls_agent_mode_both_directions(monkeypatch
     )
     rerenders: list[str] = []
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "agent")
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
     monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
 
     handled_up = _handle_normal_mode_wheel(args, state, WheelEvent(direction="up"), lambda: rerenders.append("up"))
@@ -581,6 +612,42 @@ def test_handle_normal_mode_wheel_scrolls_agent_mode_both_directions(monkeypatch
     assert handled_down is True
     assert state.transcript_scroll_offset == 0
     assert rerenders == ["up", "down"]
+
+
+def test_handle_normal_mode_wheel_is_ignored_without_mouse_opt_in(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(
+        history=[],
+        transcript=[
+            TranscriptEntry(id=1, kind="assistant", body="\n".join(f"line {i}" for i in range(24)))
+        ],
+    )
+    rerenders: list[str] = []
+
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
+    monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
+    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
+
+    handled = _handle_normal_mode_wheel(
+        args,
+        state,
+        WheelEvent(direction="up"),
+        lambda: rerenders.append("render"),
+    )
+
+    assert handled is False
+    assert state.transcript_scroll_offset == 0
+    assert rerenders == []
 
 
 def test_format_history_shows_recent_entries_with_numbers() -> None:
@@ -1312,7 +1379,7 @@ def test_render_screen_simple_welcome_shows_tui_mode_hint(monkeypatch) -> None:
     state = ScreenState(history=[])
     output = StringIO()
 
-    monkeypatch.delenv("ASTRID_TERMINAL_MODE", raising=False)
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
     monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
     monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
 
@@ -1341,6 +1408,8 @@ def test_handle_normal_mode_wheel_scrolls_welcome_view(monkeypatch) -> None:
     )
     rerenders: list[str] = []
 
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
     monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
     monkeypatch.setattr(
         "astrid.tty_app._build_welcome_workbench",
