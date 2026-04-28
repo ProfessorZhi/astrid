@@ -3170,12 +3170,24 @@ def run_tty_app(
     use_alternate_screen = _should_use_alternate_screen()
     _has_inline_frame = False
     _inline_line_count = 0
+    _native_transcript_ids: tuple[int, ...] = ()
+    _native_prompt_line_count = 0
 
     def _render_active_frame() -> None:
-        nonlocal _has_inline_frame, _inline_line_count
+        nonlocal _has_inline_frame, _inline_line_count, _native_transcript_ids, _native_prompt_line_count
         if use_alternate_screen:
             frame = _build_screen_simple(args, state)
             sys.stdout.write(frame)
+        elif terminal_mode == "shell":
+            if not _has_non_welcome_transcript_entries(state):
+                _sync_welcome_transcript_entry(args, state)
+            rendered, _native_transcript_ids, _native_prompt_line_count = _render_agent_frame_update(
+                list(state.transcript),
+                _native_transcript_ids,
+                _build_agent_prompt_region(state),
+                _native_prompt_line_count,
+            )
+            sys.stdout.write(rendered)
         else:
             frame = _build_screen_simple(args, state)
             width, _ = _get_terminal_size()

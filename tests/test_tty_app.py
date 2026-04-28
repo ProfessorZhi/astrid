@@ -227,6 +227,30 @@ def test_render_agent_frame_update_only_rewrites_prompt_region() -> None:
     assert second_prompt_lines == 1
 
 
+def test_render_agent_frame_update_keeps_welcome_static_after_first_render() -> None:
+    transcript = [TranscriptEntry(id=1, kind="welcome", body="WELCOME PET")]
+
+    first, rendered_ids, prompt_lines = _render_agent_frame_update(
+        transcript,
+        (),
+        "astrid> ",
+        previous_prompt_line_count=0,
+    )
+    second, next_ids, next_prompt_lines = _render_agent_frame_update(
+        transcript,
+        rendered_ids,
+        "astrid> hello",
+        previous_prompt_line_count=prompt_lines,
+    )
+
+    assert "WELCOME PET" in first
+    assert "WELCOME PET" not in second
+    assert second.startswith("\r\x1b[J")
+    assert second.endswith("astrid> hello")
+    assert next_ids == rendered_ids
+    assert next_prompt_lines == 1
+
+
 def test_render_agent_frame_update_appends_only_new_transcript_entries() -> None:
     initial = [
         TranscriptEntry(id=1, kind="user", body="hello"),
