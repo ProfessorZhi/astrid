@@ -376,6 +376,11 @@ def main() -> None:
         return
     if remaining:
         parser.error(f"unrecognized arguments: {' '.join(remaining)}")
+    if args.list_sessions:
+        from astrid.session import format_session_list, list_sessions
+
+        print(format_session_list(list_sessions()))
+        return
 
     _apply_terminal_mode(_resolve_terminal_mode(shell_flag=args.shell, tui_flag=args.tui))
 
