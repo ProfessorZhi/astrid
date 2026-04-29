@@ -148,6 +148,24 @@
   - `verification/runs/claudecode/minimax2.7/2026-04-29-snake-贪吃蛇/`
   - `verification/runs/codex-client/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`
   - `verification/runs/codexcli/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`
+- 每个 `verification/suites/<suite>/` 必须尽量包含：
+  - `README.md`：题目背景、要测的能力、适合/不适合测什么。
+  - `prompt.md`：第一轮给 agent 的完整 prompt。
+  - `acceptance.md`：交付标准、禁止事项、外部验收命令、通过/失败判定。
+  - `seed-workspace/`：初始工作区。这里的测试、样例和约束文件是标准试卷，不应被 run 反向覆盖。
+  - `expected-files.md`：可选，说明理想产物应该有哪些文件、入口命令和目录结构。
+  - `results-summary.md`：多平台/多模型横向结果摘要，记录每个 run 的第一轮结果、多轮结果和严格判定。
+- 每个 `verification/runs/<agent-platform>/<model>/<run>/` 必须尽量包含：
+  - `README.md` 或 `results.md`：本次 run 的配置、命令、结果、失败原因和人工观察。
+  - `prompts/round-01.md`、`prompts/round-02.md`：每一轮实际发给 agent 的 prompt，必须是原文，不要只写摘要。
+  - `workspace/`：agent 的直接产物文件夹。所有生成/修改后的代码、文档、测试产物都放这里。
+  - `transcripts/` 或 `*-transcript.txt`：每轮终端/模型输出记录。
+  - `acceptance/` 或 `pytest-output*.txt`：外部验收命令输出、截图、运行日志、diff 检查结果。
+  - `diffs/` 或 `test-diff*.txt`：与 `seed-workspace/` 的关键差异，尤其要记录验收测试是否被改。
+  - `artifacts/`：可选，放截图、录屏、构建包等非源码产物。
+- run 目录里的 `workspace/` 是答卷；suite 目录里的 `seed-workspace/` 是试卷。不要混用。
+- 多轮测试必须一轮一个 prompt 文件、一轮一个 transcript。不要只保留最终产物，否则无法判断 agent 是第一轮通过、二轮修复，还是靠改验收测试通过。
+- 如果用户要求试玩或人工修补 run 产物，必须在 `results.md` 标注“人工修补后状态”，不要把它和 agent 原始产物混成同一个结论。
 - 如果用户没有指定对比对象，先询问。推荐顺序：Claude Code 优先，Codex 其次。
 - Claude Code 测试方式：在终端输入 `claude` 运行。当前本机 Claude Code 接入 MiniMax，成本相对低，适合作为默认横向对比对象。
 - Codex 测试方式：使用 Codex 终端/CLI 运行同样任务。Codex 成本更高，只有用户确认需要对比时再跑。
