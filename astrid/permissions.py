@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import sys
@@ -20,6 +21,68 @@ PermissionDecision = Literal[
 ]
 
 PromptHandler = Callable[[dict[str, Any]], dict[str, Any]]
+
+SandboxSupport = Literal["policy_only", "os_enforced"]
+
+PERMISSION_POLICY_VERSION = 1
+SANDBOX_SUPPORT: SandboxSupport = "policy_only"
+_PERMISSION_POLICY_SNAPSHOT: dict[str, Any] = {
+    "version": PERMISSION_POLICY_VERSION,
+    "sandboxSupport": SANDBOX_SUPPORT,
+    "layers": [
+        {
+            "name": "permission_prompt",
+            "enforced": True,
+            "covers": [
+                "path access outside the current workspace",
+                "commands classified as dangerous or explicitly forced to prompt",
+                "file edits before they are applied",
+            ],
+        },
+        {
+            "name": "command_allow_deny_patterns",
+            "enforced": True,
+            "covers": [
+                "persistent allow and deny command signatures",
+                "session allow and deny command signatures",
+                "built-in dangerous command classification",
+            ],
+        },
+        {
+            "name": "edit_allow_deny_paths",
+            "enforced": True,
+            "covers": [
+                "persistent allow and deny edit targets",
+                "session allow and deny edit targets",
+                "turn-scoped edit approvals",
+            ],
+        },
+        {
+            "name": "os_sandbox",
+            "enforced": False,
+            "covers": [],
+            "reason": "Astrid does not currently create an OS-level sandbox or process/container isolation boundary.",
+        },
+        {
+            "name": "future_sandbox_modes",
+            "enforced": False,
+            "covers": [
+                "read-only workspace policy",
+                "workspace-write policy",
+                "explicit full-access policy",
+            ],
+        },
+    ],
+}
+
+
+def get_permission_policy_snapshot() -> dict[str, Any]:
+    """Return Astrid's current permission policy boundary.
+
+    This snapshot is descriptive API, not an enforcement hook. Enforcement still
+    lives in PermissionManager's path, command, and edit checks.
+    """
+    return deepcopy(_PERMISSION_POLICY_SNAPSHOT)
 
 
 def _normalize_path(target_path: str) -> str:
