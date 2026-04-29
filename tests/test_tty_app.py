@@ -22,6 +22,7 @@ from astrid.tty_app import (
     _format_history,
     _handle_input,
     _handle_companion_command,
+    _drain_next_steering_turn,
     _drain_next_queued_turn,
     _render_queued_turn_preview,
     _render_welcome_pet_block,
@@ -1015,6 +1016,28 @@ def test_handle_input_queues_next_turn_while_busy(tmp_path: Path) -> None:
     assert state.status == "Queued next turn (1)"
 
 
+def test_handle_input_records_steering_while_busy(tmp_path: Path) -> None:
+    cwd = str(tmp_path)
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[], is_busy=True)
+
+    should_exit = _handle_input(args, state, lambda: None, submitted_raw_input="/steer keep the patch smaller")
+
+    assert should_exit is False
+    assert state.queued_inputs == []
+    assert state.steering_inputs == ["keep the patch smaller"]
+    assert state.status == "Steering current turn (1)"
+
+
 def test_drain_next_queued_turn_starts_follow_up_turn(tmp_path: Path) -> None:
     cwd = str(tmp_path)
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
@@ -1050,6 +1073,49 @@ def test_drain_next_queued_turn_starts_follow_up_turn(tmp_path: Path) -> None:
     assert state.agent_result is not None
 
 
+def test_drain_next_steering_turn_starts_priority_replan(tmp_path: Path) -> None:
+    cwd = str(tmp_path)
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    messages = [
+        {
+            "role": "system",
+            "content": build_system_prompt(
+                cwd,
+                permissions.get_summary(),
+                {
+                    "skills": tools.get_skills(),
+                    "mcpServers": tools.get_mcp_servers(),
+                },
+            ),
+        }
+    ]
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=messages,
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(
+        history=[],
+        steering_inputs=["keep the current implementation smaller"],
+        queued_inputs=["write a quick summary"],
+    )
+
+    handled = _drain_next_steering_turn(args, state, lambda: None)
+
+    assert handled is True
+    assert state.steering_inputs == []
+    assert state.queued_inputs == ["write a quick summary"]
+    assert any(
+        entry.kind == "user" and "Steering update for the current task" in entry.body
+        for entry in state.transcript
+    )
+    assert state.agent_result is not None
+
+
 def test_render_queued_turn_preview_shows_count_suffix() -> None:
     state = ScreenState(queued_inputs=["first queued", "second queued"])
 
@@ -1058,6 +1124,19 @@ def test_render_queued_turn_preview_shows_count_suffix() -> None:
     assert "next turn:" in rendered
     assert "first queued" in rendered
     assert "(+1)" in rendered
+
+
+def test_render_queued_turn_preview_prioritizes_steering() -> None:
+    state = ScreenState(
+        queued_inputs=["next queued task"],
+        steering_inputs=["prefer tests before implementation"],
+    )
+
+    rendered = strip_ansi(_render_queued_turn_preview(state))
+
+    assert "steer current turn:" in rendered
+    assert "prefer tests before implementation" in rendered
+    assert "next queued task" not in rendered
 
 
 def test_handle_input_pet_next_cycles_species_and_renders_preview() -> None:

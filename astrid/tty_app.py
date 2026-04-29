@@ -269,6 +269,7 @@ class ScreenState:
     input: str = ""
     cursor_offset: int = 0
     queued_inputs: list[str] = field(default_factory=list)
+    steering_inputs: list[str] = field(default_factory=list)
     transcript: list[TranscriptEntry] = field(default_factory=list)
     transcript_scroll_offset: int = 0
     selected_slash_index: int = 0
@@ -1362,6 +1363,10 @@ def _get_simple_footer_status(state: ScreenState) -> str | None:
 
 
 def _render_queued_turn_preview(state: ScreenState) -> str:
+    if state.steering_inputs:
+        preview = _truncate_for_display(" ".join(state.steering_inputs[0].split()).strip(), 96)
+        suffix = f" (+{len(state.steering_inputs) - 1})" if len(state.steering_inputs) > 1 else ""
+        return f"{SUBTLE}steer current turn:{RESET} {preview}{SUBTLE}{suffix}{RESET}"
     if not state.queued_inputs:
         return ""
     preview = _truncate_for_display(" ".join(state.queued_inputs[0].split()).strip(), 96)
@@ -1477,6 +1482,49 @@ def _enqueue_next_turn(state: ScreenState, input_text: str) -> bool:
     return True
 
 
+def _parse_steering_input(input_text: str) -> str | None:
+    stripped = input_text.strip()
+    if stripped == "/steer":
+        return ""
+    if stripped.startswith("/steer "):
+        return stripped[len("/steer ") :].strip()
+    return None
+
+
+def _record_current_turn_steer(state: ScreenState, input_text: str) -> bool:
+    steering_text = _parse_steering_input(input_text)
+    if steering_text is None:
+        return False
+    if not steering_text:
+        state.status = "Add guidance after /steer to steer the current turn."
+        return True
+    state.steering_inputs.append(steering_text)
+    state.status = f"Steering current turn ({len(state.steering_inputs)})"
+    return True
+
+
+def _format_steering_turn(input_text: str) -> str:
+    return (
+        "Steering update for the current task:\n"
+        f"{input_text.strip()}\n\n"
+        "Replan from the latest completed tool/model boundary before continuing. "
+        "Prefer this steering update over any earlier queued follow-up task."
+    )
+
+
+def _drain_next_steering_turn(
+    args: TtyAppArgs,
+    state: ScreenState,
+    rerender: Callable[[], None],
+) -> bool:
+    if state.is_busy or not state.steering_inputs:
+        return False
+    next_input = state.steering_inputs.pop(0)
+    if _handle_input(args, state, rerender, submitted_raw_input=_format_steering_turn(next_input)):
+        raise SystemExit(0)
+    return True
+
+
 def _drain_next_queued_turn(
     args: TtyAppArgs,
     state: ScreenState,
@@ -1488,6 +1536,14 @@ def _drain_next_queued_turn(
     if _handle_input(args, state, rerender, submitted_raw_input=next_input):
         raise SystemExit(0)
     return True
+
+
+def _drain_next_pending_turn(
+    args: TtyAppArgs,
+    state: ScreenState,
+    rerender: Callable[[], None],
+) -> bool:
+    return _drain_next_steering_turn(args, state, rerender) or _drain_next_queued_turn(args, state, rerender)
 
 
 def _jump_transcript_to_edge(args: TtyAppArgs, state: ScreenState, target: str) -> bool:
@@ -2627,7 +2683,7 @@ def _execute_tool_shortcut(
         _finalize_dangling_running_tools(state)
         if not _get_running_tool_entries(state):
             state.status = None
-        _drain_next_queued_turn(args, state, rerender)
+        _drain_next_pending_turn(args, state, rerender)
 
 
 # ---------------------------------------------------------------------------
@@ -2644,11 +2700,20 @@ def _handle_input(
     """Returns True if /exit was typed."""
     input_text = (submitted_raw_input if submitted_raw_input is not None else state.input).strip()
     if state.is_busy:
+        if _record_current_turn_steer(state, input_text):
+            return False
         _enqueue_next_turn(state, input_text)
         return False
 
     terminal_mode = _terminal_mode()
     if not input_text:
+        return False
+    if _parse_steering_input(input_text) is not None:
+        _push_transcript_entry(
+            state,
+            kind="assistant",
+            body="No active task is running. Start a task first, then use /steer <guidance> while it is busy.",
+        )
         return False
     if input_text == "/exit":
         return True
@@ -3485,7 +3550,7 @@ def run_tty_app(
                         if agent_result_data.get("messages"):
                             args.messages = agent_result_data["messages"]
                         agent_result_data["done"] = False  # Reset flag
-                    _drain_next_queued_turn(args, state, rerender)
+                    _drain_next_pending_turn(args, state, rerender)
 
                 # Read raw input
                 if sys.platform == "win32":
