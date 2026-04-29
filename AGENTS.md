@@ -9,31 +9,33 @@ These instructions are the working ledger for agents improving Astrid.
 - Keep each PR to one verifiable improvement. Do not mix runtime rewrites, metadata cleanup, and unrelated refactors.
 - Do not revert user or agent changes from other branches/worktrees. If a file is outside your assigned ownership, leave it alone.
 
-## Current Optimization Ledger
+## Current State Ledger
 
-1. **TUI runtime architecture**
-   - Gap: the TUI has historically coupled transcript rendering, input, status, and terminal writes too tightly.
-   - Direction: separate transcript viewport, input chrome, status/progress, and renderer ownership. Only the renderer should write terminal output.
+Astrid already has the first-pass productization work for the original six gaps:
+
+1. **TUI performance and shell UX**
+   - Implemented: cached/windowed transcript rendering, line-diff writer, shell-mode native scrollback defaults, recent-history cleanup, and short-window welcome rendering fixes.
+   - Remaining: continue splitting `tty_app.py` into renderer/input/status/transcript viewport modules only when a scoped PR can preserve pinned-bottom behavior.
 
 2. **Permission and sandbox governance**
-   - Gap: Astrid has permission approval and sub-agent permission forks, but not Codex-level platform sandbox policy.
-   - Direction: define policy boundaries first, then add enforcement. Do not promise system sandbox parity before the threat model exists.
+   - Implemented: policy snapshot/tests and clearer permission boundaries.
+   - Remaining: Astrid is still policy-only, not an OS sandbox. Do not claim Codex-level sandbox parity until there is real process/filesystem isolation.
 
-3. **Multi-agent runtime productization**
-   - Gap: Astrid has `SubAgentManager` and orchestration, but the flow is still closer to a fixed first version than a configurable runtime.
-   - Direction: improve worker lifecycle, failure/cancel handling, result merging, isolated context, and observable state before adding more roles.
+3. **Multi-agent runtime**
+   - Implemented: lifecycle summaries, worker failure/cancel/reporting states, and clearer orchestration tests.
+   - Remaining: product-grade scheduling, configurable worker roles, and richer result synthesis need separate verified PRs.
 
 4. **Mid-turn steering**
-   - Gap: Astrid can queue the next turn while busy, but queueing is not the same as steering the current task.
-   - Direction: distinguish `queued next turn` from `steer current turn`. Prefer interrupt-and-replan first; avoid complex mid-token injection until the simpler model is stable.
+   - Implemented: `queued next turn` and `steer current turn` are distinct in the first-pass queue model.
+   - Remaining: current steering is interrupt-and-replan style. Do not describe it as mid-token injection.
 
-5. **Context and memory long-session stability**
-   - Gap: Astrid has context compaction and memory modules, but long-session resume/compact behavior needs stronger guarantees.
-   - Direction: preserve the active user task, recent tool results, and recovery state across compact/resume. Add tests before changing heuristics.
+5. **Context and memory stability**
+   - Implemented: compaction anchor tests and active-task preservation checks.
+   - Remaining: long live sessions still need real resume/compact stress tests with transcripts.
 
 6. **Repository trustworthiness**
-   - Gap: public-facing metadata must match the actual Python project. Stale Codex/OpenAI package metadata or inaccurate dependency claims hurt credibility.
-   - Direction: keep README, `pyproject.toml`, `package.json`, tests, and benchmark claims aligned with the code.
+   - Implemented: agent guidance, metadata cleanup, local artifact ignore rules, CLI smoke coverage, and branch/worktree cleanup.
+   - Remaining: keep claims tied to reproducible commands and avoid stale benchmark numbers.
 
 ## Terminology Rules
 
@@ -42,19 +44,22 @@ These instructions are the working ledger for agents improving Astrid.
 - Do not describe Astrid as single-agent only. It has sub-agents and orchestration; the gap is product-grade runtime behavior.
 - Do not describe Astrid as zero-dependency while `pyproject.toml` lists runtime dependencies.
 
-## PR Split Rules
+## Local Coding Agent Evaluation
 
-- PR 0: finish the current TUI performance branch before further `tty_app.py` work.
-- PR 1: documentation and repository credibility only (`AGENTS.md`, README, metadata).
-- PR 2: steering v1. Own input/queue behavior and tests; avoid unrelated TUI rendering changes.
-- PR 3: multi-agent runtime. Own `orchestration.py`, `sub_agents.py`, and related tests.
-- PR 4: context/memory stability. Own context, memory, session code, and related tests.
-- PR 5: permission/sandbox design. Start with threat model and policy tests before platform sandbox work.
-- PR 6: TUI runtime split. Start only after PR 0 is merged or rebased.
+- Local-only verification artifacts live under `verification/`, which is ignored by Git.
+- Use this layout for coding-agent comparisons:
+  - `verification/astrid/<date-and-run-name>/`
+  - `verification/codex/<date-and-run-name>/`
+  - `verification/claudecode/<date-and-run-name>/`
+- Each run folder should keep the isolated `workspace/`, harness script, captured transcripts, and pass/fail notes together.
+- Current Astrid coding eval: `verification/astrid/2026-04-29-real-model-coding-eval/`.
+- When testing Astrid with piped stdin, remember it is non-TTY: write/edit approvals will fail unless the target files are temporarily pre-authorized in `~/.astrid/permissions.json` and restored afterward.
+- Judge coding ability by external checks, not assistant text. Run pytest or explicit scripts against the generated workspace and record the exact pass/fail output.
 
 ## Verification Defaults
 
-- For TUI changes: `python -m pytest tests/test_screen.py tests/test_tty_app.py tests/test_tui.py -q`
-- For multi-agent changes: `python -m pytest tests/test_orchestration.py tests/test_sub_agents.py -q`
-- For context/memory/session changes: run the narrow affected tests plus `python -m pytest tests -q -k "context or memory or session"`
-- For docs/metadata changes: run `python -m pytest tests/test_cli_commands.py tests/test_screen.py -q`
+- TUI changes: `python -m pytest tests/test_screen.py tests/test_tty_app.py tests/test_tui.py -q`
+- Multi-agent changes: `python -m pytest tests/test_orchestration.py tests/test_sub_agents.py -q`
+- Context/memory/session changes: run the narrow affected tests plus `python -m pytest tests -q -k "context or memory or session"`
+- Docs/metadata changes: `python -m pytest tests/test_cli_commands.py tests/test_screen.py -q`
+- Real coding-agent evals: create a run under `verification/<agent>/...`, capture transcripts, then run the workspace acceptance tests outside the agent.
