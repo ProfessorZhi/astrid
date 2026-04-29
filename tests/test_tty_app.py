@@ -6,7 +6,6 @@ from astrid.tty_app import (
     _build_agent_prompt_region,
     _busy_animation_interval,
     _idle_poll_interval,
-    _LineDiffScreenWriter,
     _render_throttle_interval,
     _build_screen_simple,
     _get_max_transcript_scroll_offset,
@@ -37,6 +36,7 @@ from astrid.tty_app import (
     summarize_tool_input,
     summarize_tool_output,
 )
+from astrid.tui.screen_diff import LineDiffScreenWriter
 from astrid.tui.buddy_state import build_buddy_profile
 from astrid.tui.input_parser import KeyEvent
 from astrid.mock_model import MockModelAdapter
@@ -518,7 +518,7 @@ def test_get_max_transcript_scroll_offset_uses_transcript_line_counts(monkeypatc
 
 def test_line_diff_screen_writer_only_writes_changed_rows_after_first_frame() -> None:
     output = StringIO()
-    writer = _LineDiffScreenWriter(output)
+    writer = LineDiffScreenWriter(output)
 
     first = writer.render("one\ntwo\nthree")
     second = writer.render("one\nTWO\nthree")
