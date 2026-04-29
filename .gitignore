@@ -39,9 +39,8 @@ Thumbs.db
 # Local AI collaboration artifacts
 .superpowers/
 
-# Local-only Astrid runtime, verification, and documentation artifacts
+# Local-only Astrid runtime and documentation artifacts
 docs-local/
-verification/
 .tmp*/
 .tmp_codex_from_app.exe
 .astrid/
