@@ -6,8 +6,10 @@ from astrid.tty_app import (
     _build_agent_prompt_region,
     _busy_animation_interval,
     _idle_poll_interval,
+    _LineDiffScreenWriter,
     _render_throttle_interval,
     _build_screen_simple,
+    _get_max_transcript_scroll_offset,
     _handle_normal_mode_wheel,
     _handle_normal_mode_key,
     _render_agent_frame_update,
@@ -447,6 +449,86 @@ def test_build_screen_simple_keeps_prompt_visible_while_scrolling_transcript(mon
     assert "hello" in rendered
 
 
+def test_build_screen_simple_uses_windowed_transcript_renderer(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(
+        history=[],
+        transcript=[
+            TranscriptEntry(id=i, kind="assistant", body=f"reply {i}")
+            for i in range(200)
+        ],
+        input="hello",
+        cursor_offset=5,
+    )
+
+    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 12))
+
+    def fail_full_render(entries):
+        raise AssertionError(f"full transcript render called for {len(entries)} entries")
+
+    monkeypatch.setattr("astrid.tty_app.render_transcript_simple", fail_full_render)
+
+    rendered = strip_ansi(_build_screen_simple(args, state))
+
+    assert "reply 199" in rendered
+    assert "astrid>" in rendered
+
+
+def test_get_max_transcript_scroll_offset_uses_transcript_line_counts(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(
+        history=[],
+        transcript=[
+            TranscriptEntry(id=1, kind="assistant", body="\n".join(f"line {i}" for i in range(40)))
+        ],
+        input="hello",
+        cursor_offset=5,
+    )
+
+    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 12))
+
+    def fail_page_builder(*args, **kwargs):
+        raise AssertionError("max scroll rebuilt the full page")
+
+    monkeypatch.setattr("astrid.tty_app._build_simple_page_flow_document", fail_page_builder)
+
+    assert _get_max_transcript_scroll_offset(args, state) > 0
+
+
+def test_line_diff_screen_writer_only_writes_changed_rows_after_first_frame() -> None:
+    output = StringIO()
+    writer = _LineDiffScreenWriter(output)
+
+    first = writer.render("one\ntwo\nthree")
+    second = writer.render("one\nTWO\nthree")
+
+    assert "\x1b[2J\x1b[H" in first
+    assert "\x1b[2J\x1b[H" not in second
+    assert "TWO" in second
+    assert "one" not in second
+    assert "three" not in second
+
+
 def test_build_screen_simple_keeps_prompt_in_document_flow_when_not_scrolled(monkeypatch) -> None:
     cwd = str(Path(".").resolve())
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
@@ -536,7 +618,7 @@ def test_build_screen_simple_does_not_pad_short_transcript_to_terminal_height(mo
     assert lines[-1].startswith(" astrid>")
 
 
-def test_build_screen_simple_scrolls_prompt_out_of_view_with_document(monkeypatch) -> None:
+def test_build_screen_simple_keeps_prompt_pinned_while_scrolling_document(monkeypatch) -> None:
     cwd = str(Path(".").resolve())
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
     tools = create_default_tool_registry(cwd, runtime=None)
@@ -565,8 +647,8 @@ def test_build_screen_simple_scrolls_prompt_out_of_view_with_document(monkeypatc
     lines = rendered.splitlines()
 
     assert len(lines) == 16
-    assert all(not line.startswith("astrid>") for line in lines)
-    assert "Running" not in lines
+    assert lines[-3].startswith(" astrid>")
+    assert lines[-1] == " Running"
 
 
 def test_build_screen_simple_no_longer_renders_dedicated_bottom_region_separator(monkeypatch) -> None:

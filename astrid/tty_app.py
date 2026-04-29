@@ -22,7 +22,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TextIO
 
 from astrid.agent_loop import run_agent_turn
 from astrid.background_tasks import list_background_tasks
@@ -110,11 +110,13 @@ from astrid.tui.screen import (
 )
 from astrid.tui.theme import theme
 from astrid.tui.transcript import (
+    _SIMPLE_SEPARATOR_LINES,
     _render_transcript_lines,
     get_transcript_max_scroll_offset,
     get_transcript_window_size,
     render_transcript,
     render_transcript_simple,
+    render_transcript_simple_windowed,
 )
 from astrid.tui.types import OrchestrationWorker, TranscriptEntry
 from astrid.types import ChatMessage, ModelAdapter
@@ -391,6 +393,7 @@ def _is_multi_agent_candidate(input_text: str) -> bool:
 _SINGLE_AGENT_BUSY_SPINNER_FRAMES: tuple[str, ...] = ("◜", "◠", "◝", "◞", "◡", "◟")
 _SINGLE_AGENT_DEFAULT_VERB = "Transfiguring"
 _SCREEN_CLEAR = "\x1b[2J\x1b[H"
+_CLEAR_LINE = "\x1b[2K"
 _CURSOR_SAVE = "\x1b7"
 _CURSOR_RESTORE = "\x1b8"
 
@@ -399,6 +402,44 @@ def _strip_screen_clear_prefix(frame: str) -> str:
     if frame.startswith(_SCREEN_CLEAR):
         return frame[len(_SCREEN_CLEAR):]
     return frame
+
+
+class _LineDiffScreenWriter:
+    """Write terminal frames by updating only rows whose text changed."""
+
+    def __init__(self, output: TextIO) -> None:
+        self._output = output
+        self._previous_lines: list[str] = []
+        self._has_frame = False
+
+    def reset(self) -> None:
+        self._previous_lines = []
+        self._has_frame = False
+
+    def render(self, frame: str, *, force_full: bool = False) -> str:
+        content = _strip_screen_clear_prefix(frame)
+        next_lines = content.split("\n") if content else [""]
+        if force_full or not self._has_frame:
+            rendered = _SCREEN_CLEAR + content
+            self._output.write(rendered)
+            self._previous_lines = next_lines
+            self._has_frame = True
+            return rendered
+
+        chunks: list[str] = []
+        max_lines = max(len(self._previous_lines), len(next_lines))
+        for index in range(max_lines):
+            previous = self._previous_lines[index] if index < len(self._previous_lines) else ""
+            current = next_lines[index] if index < len(next_lines) else ""
+            if previous == current:
+                continue
+            chunks.append(f"\x1b[{index + 1};1H{_CLEAR_LINE}{current}")
+
+        rendered = "".join(chunks)
+        if rendered:
+            self._output.write(rendered)
+        self._previous_lines = next_lines
+        return rendered
 
 
 def _count_rendered_lines(frame: str, width: int) -> int:
@@ -1235,11 +1276,61 @@ def _get_transcript_body_lines(args: TtyAppArgs, state: ScreenState) -> int:
     return max(6, rows - chrome_overhead)
 
 
+def _is_tui_profile_enabled() -> bool:
+    value = os.environ.get("ASTRID_TUI_PROFILE", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _record_tui_profile(metrics: dict[str, float | int]) -> None:
+    if not _is_tui_profile_enabled():
+        return
+    logging.getLogger("astrid.tui.profile").info(
+        " ".join(f"{key}={value}" for key, value in metrics.items())
+    )
+
+
+def _get_simple_bottom_chrome_lines(state: ScreenState) -> list[str]:
+    lines = _split_rendered_lines(_build_simple_prompt_body(state))
+    footer_status = _get_simple_footer_status(state)
+    if footer_status:
+        lines.append("")
+        lines.extend(_split_rendered_lines(footer_status))
+    return lines
+
+
+def _get_simple_content_window_size(state: ScreenState, rows: int) -> int:
+    bottom_lines = _get_simple_bottom_chrome_lines(state)
+    spacer = 1
+    return max(1, rows - len(bottom_lines) - spacer)
+
+
+def _get_simple_transcript_entries(state: ScreenState) -> list[TranscriptEntry]:
+    transcript_snapshot = _get_renderable_transcript_entries(state)
+    return _trim_simple_transcript_for_busy_state(transcript_snapshot, state)
+
+
+def _get_simple_welcome_lines(args: TtyAppArgs, state: ScreenState) -> list[str]:
+    _sync_welcome_transcript_entry(args, state)
+    welcome_entry = _find_welcome_entry(state)
+    if welcome_entry is None:
+        return []
+    return _split_rendered_lines(welcome_entry.body)
+
+
 def _get_max_transcript_scroll_offset(args: TtyAppArgs, state: ScreenState) -> int:
     _, rows = _get_terminal_size()
-    document = _build_simple_page_flow_document(args, state, include_scroll_hint=False)
-    total_lines = len(_split_rendered_lines(document))
-    return max(0, total_lines - max(8, rows))
+    rows = max(8, rows)
+    content_window_size = _get_simple_content_window_size(state, rows)
+    transcript_entries = _get_simple_transcript_entries(state)
+    if transcript_entries:
+        return get_transcript_max_scroll_offset(
+            transcript_entries,
+            content_window_size,
+            separator_lines=_SIMPLE_SEPARATOR_LINES,
+        )
+
+    content_lines = _get_simple_static_content_lines(args, state)
+    return max(0, len(content_lines) - content_window_size)
 
 
 def _scroll_transcript_by(args: TtyAppArgs, state: ScreenState, delta: int) -> bool:
@@ -1276,6 +1367,41 @@ def _render_queued_turn_preview(state: ScreenState) -> str:
     preview = _truncate_for_display(" ".join(state.queued_inputs[0].split()).strip(), 96)
     suffix = f" (+{len(state.queued_inputs) - 1})" if len(state.queued_inputs) > 1 else ""
     return f"{SUBTLE}next turn:{RESET} {preview}{SUBTLE}{suffix}{RESET}"
+
+
+def _get_simple_static_content_lines(args: TtyAppArgs, state: ScreenState) -> list[str]:
+    welcome_lines = _get_simple_welcome_lines(args, state)
+    if welcome_lines:
+        return welcome_lines
+
+    if _should_append_single_agent_busy_line(state):
+        return _split_rendered_lines(_render_single_agent_busy_line(state))
+
+    if state.companion_enabled:
+        return _split_rendered_lines(
+            f"{render_status_line(None)}\n\n"
+            f"{render_buddy_block(state.companion_species, 0)}\n\n"
+            "Type a message or /help for commands."
+        )
+
+    return _split_rendered_lines(f"{render_status_line(None)}\n\nType /help for commands.")
+
+
+def _slice_content_lines(lines: list[str], scroll_offset: int, window_size: int) -> list[str]:
+    window_size = max(1, window_size)
+    max_offset = max(0, len(lines) - window_size)
+    offset = max(0, min(scroll_offset, max_offset))
+    if offset > 0:
+        content_window_size = max(1, window_size - 1)
+        end = min(len(lines), content_window_size + offset + 1)
+        start = max(0, end - content_window_size)
+        visible = list(lines[start:end])
+        visible.append(f"{SUBTLE}── scroll {offset}/{max_offset} (PgUp/PgDn or scroll)──{RESET}")
+        return visible
+    end = len(lines)
+    start = max(0, end - window_size)
+    visible = lines[start:end]
+    return visible
 
 
 def _build_simple_page_flow_document(
@@ -1704,20 +1830,64 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
 
 
 def _build_screen_simple(args: TtyAppArgs, state: ScreenState) -> str:
+    total_start = time.perf_counter()
+    render_transcript_ms = 0.0
+    build_start = time.perf_counter()
     _, rows = _get_terminal_size()
     rows = max(8, rows)
-    document = _build_simple_page_flow_document(
-        args,
-        state,
-        include_scroll_hint=state.transcript_scroll_offset > 0,
+
+    bottom_lines = _get_simple_bottom_chrome_lines(state)
+    content_window_size = _get_simple_content_window_size(state, rows)
+    transcript_entries = _get_simple_transcript_entries(state)
+
+    if transcript_entries:
+        transcript_start = time.perf_counter()
+        content = render_transcript_simple_windowed(
+            transcript_entries,
+            state.transcript_scroll_offset,
+            content_window_size,
+        )
+        render_transcript_ms = (time.perf_counter() - transcript_start) * 1000
+        content_lines = _split_rendered_lines(content)
+
+        welcome_lines = _get_simple_welcome_lines(args, state)
+        if welcome_lines:
+            welcome_budget = min(len(welcome_lines), max(0, content_window_size - 1))
+            if welcome_budget > 0:
+                content_lines = welcome_lines[:welcome_budget] + [""] + content_lines
+                content_lines = content_lines[-content_window_size:]
+
+        profile = _ensure_buddy_profile(state, args.cwd)
+        overlay = render_buddy_overlay(profile, state.buddy_runtime)
+        if overlay and len(content_lines) < content_window_size:
+            if content_lines and content_lines[-1] != "":
+                content_lines.append("")
+            remaining = max(0, content_window_size - len(content_lines))
+            content_lines.extend(_split_rendered_lines(overlay)[:remaining])
+    else:
+        static_lines = _get_simple_static_content_lines(args, state)
+        content_lines = _slice_content_lines(static_lines, state.transcript_scroll_offset, content_window_size)
+
+    visible = list(content_lines)
+    if visible and bottom_lines:
+        visible.append("")
+    visible.extend(bottom_lines)
+    if len(visible) > rows:
+        visible = visible[-rows:]
+
+    build_document_ms = (time.perf_counter() - build_start) * 1000
+    _record_tui_profile(
+        {
+            "total_frame_ms": round((time.perf_counter() - total_start) * 1000, 3),
+            "build_document_ms": round(build_document_ms, 3),
+            "render_transcript_ms": round(render_transcript_ms, 3),
+            "terminal_write_ms": 0,
+            "transcript_entries": len(transcript_entries),
+            "rendered_lines": len(visible),
+            "bytes_written": len("\n".join(visible)),
+        }
     )
-    lines = _split_rendered_lines(document)
-    max_offset = max(0, len(lines) - rows)
-    offset = max(0, min(state.transcript_scroll_offset, max_offset))
-    end = len(lines) - offset
-    start = max(0, end - rows)
-    visible = lines[start:end]
-    return _SCREEN_CLEAR + "\n".join(visible)
+    return _SCREEN_CLEAR + "\n".join(_apply_simple_left_gutter(visible))
 
 
 def _render_screen_simple(args: TtyAppArgs, state: ScreenState) -> None:
@@ -3172,12 +3342,16 @@ def run_tty_app(
     _inline_line_count = 0
     _native_transcript_ids: tuple[int, ...] = ()
     _native_prompt_line_count = 0
+    _screen_writer = _LineDiffScreenWriter(sys.stdout)
 
     def _render_active_frame() -> None:
         nonlocal _has_inline_frame, _inline_line_count, _native_transcript_ids, _native_prompt_line_count
+        write_start = time.perf_counter()
+        bytes_written = 0
         if use_alternate_screen:
             frame = _build_screen_simple(args, state)
-            sys.stdout.write(frame)
+            rendered = _screen_writer.render(frame, force_full=not _has_inline_frame)
+            bytes_written = len(rendered)
         elif terminal_mode == "shell":
             if not _has_non_welcome_transcript_entries(state):
                 _sync_welcome_transcript_entry(args, state)
@@ -3188,6 +3362,7 @@ def run_tty_app(
                 _native_prompt_line_count,
             )
             sys.stdout.write(rendered)
+            bytes_written = len(rendered)
         else:
             frame = _build_screen_simple(args, state)
             width, _ = _get_terminal_size()
@@ -3197,8 +3372,17 @@ def run_tty_app(
                 width,
             )
             sys.stdout.write(rendered)
+            bytes_written = len(rendered)
         sys.stdout.flush()
+        _record_tui_profile(
+            {
+                "terminal_write_ms": round((time.perf_counter() - write_start) * 1000, 3),
+                "bytes_written": bytes_written,
+            }
+        )
         if not use_alternate_screen:
+            _has_inline_frame = True
+        else:
             _has_inline_frame = True
 
     # Throttled renderer: coalesces rapid rerender() calls to reduce flickering
