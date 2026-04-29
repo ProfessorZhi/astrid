@@ -1368,6 +1368,17 @@ def _slice_content_lines(lines: list[str], scroll_offset: int, window_size: int)
     return visible
 
 
+def _slice_top_anchored_content_lines(
+    lines: list[str], scroll_offset: int, window_size: int
+) -> list[str]:
+    window_size = max(1, window_size)
+    max_offset = max(0, len(lines) - window_size)
+    offset = max(0, min(scroll_offset, max_offset))
+    if offset <= 0:
+        return lines[:window_size]
+    return _slice_content_lines(lines, offset, window_size)
+
+
 def _build_simple_page_flow_document(
     args: TtyAppArgs,
     state: ScreenState,
@@ -1751,7 +1762,7 @@ def _build_welcome_workbench(args: TtyAppArgs, state: ScreenState, *, width: int
         if state.companion_enabled
         else "Buddy hidden\nUse /pet show to bring it back."
     )
-    recent_items = [item for item in reversed(state.history[-3:])] if state.history else []
+    recent_items = _build_welcome_recent_items(state.history)
     if not recent_items:
         recent_items = ["No recent activity yet"]
     return render_welcome_workbench(
@@ -1768,6 +1779,41 @@ def _build_welcome_workbench(args: TtyAppArgs, state: ScreenState, *, width: int
         recent_items=recent_items,
         width=width,
     )
+
+
+def _looks_like_corrupt_history_entry(item: str) -> bool:
+    stripped = item.strip()
+    if not stripped:
+        return True
+    if stripped and all(ch == "?" for ch in stripped):
+        return True
+    if "\ufffd" in stripped:
+        return True
+    mojibake_markers = {
+        "\u6d63",
+        "\u72b2",
+        "\u30bd",
+        "\u748b",
+        "\u69f8",
+        "\u93b4",
+        "\u6d94",
+        "\u9591",
+        "\u95bf",
+    }
+    marker_count = sum(1 for ch in stripped if ch in mojibake_markers)
+    return marker_count >= 2
+
+
+def _build_welcome_recent_items(history: list[str]) -> list[str]:
+    recent: list[str] = []
+    for item in reversed(history[-8:]):
+        text = " ".join(str(item).replace("\x00", "").split()).strip()
+        if not text or _looks_like_corrupt_history_entry(text):
+            continue
+        recent.append(text)
+        if len(recent) >= 3:
+            break
+    return recent
 
 
 def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
@@ -1880,8 +1926,16 @@ def _build_screen_simple(args: TtyAppArgs, state: ScreenState) -> str:
             remaining = max(0, content_window_size - len(content_lines))
             content_lines.extend(_split_rendered_lines(overlay)[:remaining])
     else:
-        static_lines = _get_simple_static_content_lines(args, state)
-        content_lines = _slice_content_lines(static_lines, state.transcript_scroll_offset, content_window_size)
+        welcome_lines = _get_simple_welcome_lines(args, state)
+        if welcome_lines:
+            content_lines = _slice_top_anchored_content_lines(
+                welcome_lines,
+                state.transcript_scroll_offset,
+                content_window_size,
+            )
+        else:
+            static_lines = _get_simple_static_content_lines(args, state)
+            content_lines = _slice_content_lines(static_lines, state.transcript_scroll_offset, content_window_size)
 
     visible = list(content_lines)
     if visible and bottom_lines:

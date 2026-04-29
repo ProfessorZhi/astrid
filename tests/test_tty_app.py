@@ -1549,6 +1549,55 @@ def test_render_screen_simple_welcome_shows_shell_mode_label(monkeypatch) -> Non
     assert "Mode: shell. PowerShell keeps native scrollback." not in rendered
 
 
+def test_build_screen_simple_keeps_welcome_header_visible_in_short_shell_window(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=["hello"])
+
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
+    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 8))
+
+    rendered = strip_ansi(_build_screen_simple(args, state))
+
+    assert "Welcome back" in rendered
+    assert "shell mode" in rendered
+    assert "astrid>" in rendered
+
+
+def test_welcome_recent_filters_corrupt_history_entries(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=["\u6d63\u72b2\u30bd", "??", "\u4f60\u597d"])
+
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
+    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (120, 40))
+
+    rendered = strip_ansi(_build_screen_simple(args, state))
+
+    assert "recent" in rendered
+    assert "\u4f60\u597d" in rendered
+    assert "\u6d63\u72b2\u30bd" not in rendered
+    assert "??" not in rendered
+
+
 def test_render_screen_simple_welcome_shows_tui_mode_hint(monkeypatch) -> None:
     cwd = str(Path(".").resolve())
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})

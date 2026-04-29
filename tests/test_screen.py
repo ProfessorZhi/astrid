@@ -334,3 +334,35 @@ def test_shell_mode_skips_alt_screen_and_mouse_capture(monkeypatch) -> None:
     screen.exit_alternate_screen()
 
     assert output.getvalue() == ""
+
+
+def test_shell_mode_ignores_mouse_opt_in_sequences(monkeypatch) -> None:
+    output = StringIO()
+
+    class _TTYBuffer:
+        def isatty(self) -> bool:
+            return True
+
+        def write(self, data: str) -> int:
+            return output.write(data)
+
+        def flush(self) -> None:
+            output.flush()
+
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
+    monkeypatch.delenv("ASTRID_ALT_SCREEN", raising=False)
+    monkeypatch.setattr(screen.sys, "platform", "win32")
+    monkeypatch.setattr(screen, "_enable_windows_vt_processing", lambda: None)
+    monkeypatch.setattr(screen.sys, "stdout", _TTYBuffer())
+
+    screen.enter_alternate_screen()
+    screen.exit_alternate_screen()
+
+    rendered = output.getvalue()
+    assert screen.ENABLE_MOUSE_TRACKING not in rendered
+    assert screen.DISABLE_MOUSE_TRACKING not in rendered
+    assert screen.DISABLE_ALTERNATE_SCROLL not in rendered
+    assert screen.ENTER_ALT_SCREEN not in rendered
+    assert rendered == ""
