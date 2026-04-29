@@ -36,6 +36,9 @@ class AgentType(str, Enum):
     GENERAL = "general"           # Full tools, complex tasks
 
 
+TERMINAL_AGENT_STATUSES = frozenset({"completed", "failed", "cancelled"})
+
+
 @dataclass
 class AgentDefinition:
     """Sub-agent definition.
@@ -371,17 +374,23 @@ class SubAgentManager:
 
         return True
     
-    def cancel_agent(self, agent_id: str) -> bool:
+    def cancel_agent(self, agent_id: str, reason: str = "") -> bool:
         """Cancel a running agent."""
         instance = self.agents.get(agent_id)
         if not instance:
             return False
         
         instance.status = "cancelled"
+        instance.error = reason or None
         instance.completed_at = time.time()
         self._refresh_result_summary(instance)
 
         return True
+
+    def is_agent_terminal(self, agent_id: str) -> bool:
+        """Return whether an agent has reached a final lifecycle state."""
+        instance = self.agents.get(agent_id)
+        return bool(instance and instance.status in TERMINAL_AGENT_STATUSES)
     
     def get_agent(self, agent_id: str) -> AgentInstance | None:
         """Get agent instance by ID."""
@@ -393,6 +402,26 @@ class SubAgentManager:
             agent for agent in self.agents.values()
             if agent.status == "running"
         ]
+
+    def compile_merge_report(self) -> dict[str, Any]:
+        """Build structured status for parent-side reporting and merge decisions."""
+        total = len(self.agents)
+        active = len(self.get_active_agents())
+        completed = sum(agent.status == "completed" for agent in self.agents.values())
+        failed = sum(agent.status == "failed" for agent in self.agents.values())
+        cancelled = sum(agent.status == "cancelled" for agent in self.agents.values())
+
+        return {
+            "total": total,
+            "active": active,
+            "completed": completed,
+            "failed": failed,
+            "cancelled": cancelled,
+            "terminal": completed + failed + cancelled,
+            "ready_to_merge": total > 0 and active == 0 and failed == 0 and cancelled == 0,
+            "has_failures": failed > 0,
+            "has_cancellations": cancelled > 0,
+        }
     
     def format_agent_status(self) -> str:
         """Format status report for all agents."""
