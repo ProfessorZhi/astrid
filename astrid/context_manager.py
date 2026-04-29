@@ -223,6 +223,10 @@ class ContextManager:
             m for m in other_messages
             if m.get("role") != "assistant_progress"
         ]
+        current_task_message = next(
+            (m for m in filtered if m.get("role") == "user"),
+            None,
+        )
         
         # If still too large, drop oldest messages one at a time.
         # Prefer dropping tool-call/tool-result pairs first, then plain
@@ -230,6 +234,9 @@ class ContextManager:
         while estimate_messages_tokens(filtered) > target_tokens and len(filtered) > MIN_MESSAGES_TO_KEEP:
             removed = False
             for i in range(len(filtered) - MIN_MESSAGES_TO_KEEP):
+                if filtered[i] is current_task_message:
+                    continue
+
                 role = filtered[i].get("role")
                 # Drop tool-call + its result as a pair
                 if role == "assistant_tool_call":
