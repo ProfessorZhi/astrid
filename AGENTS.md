@@ -21,7 +21,8 @@
 
 参考方式：
 
-- 做 TUI/runtime/权限/sandbox/headless exec/MCP 时，优先看 Codex 的 Rust CLI/TUI/runtime 分层。
+- 做 TUI 时，要重点参考本地 Claude Code TypeScript 源码里的终端 UI 组织方式，尤其是输入区、transcript、状态区、滚动、copy-friendly 行为和组件边界；同时参考 Codex 的 Rust/Ratatui 分层来理解 renderer/runtime 纪律。
+- 做 runtime/权限/sandbox/headless exec/MCP 时，优先看 Codex 的 Rust CLI/runtime 分层。
 - 做 agent loop、Todo、Subagent、Skills、Hooks、Memory、Steering、权限模式时，优先看本地 Claude Code TypeScript 源码和 Claude Code 学习站。
 - 做 Astrid 代码改动前，先定位 Astrid 当前对应模块，再查参考项目里相近模块。结论必须写清楚“本地 Astrid 现状是什么、参考项目怎么做、这次只借鉴哪一部分”。
 - 不要把参考项目的概念照搬成 Astrid 已实现能力。比如 Astrid 当前只有 skills/MCP/hooks 等扩展面，不要直接称为完整 plugin system；当前 steering 是 interrupt-and-replan，不要说成复杂 mid-token 注入。
