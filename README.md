@@ -6,7 +6,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](LICENSE)
-[![Dependencies: 0](https://img.shields.io/badge/dependencies-0-f97316?style=for-the-badge)](pyproject.toml)
+[![Runtime deps: 2](https://img.shields.io/badge/runtime_deps-2-f97316?style=for-the-badge)](pyproject.toml)
 [![Tests: 98.9%](https://img.shields.io/badge/tests-98.9%25-22c55e?style=for-the-badge)](tests/)
 
 [![Readability: 9/10](https://img.shields.io/badge/readability-9%2F10-4F46E5?style=for-the-badge)](docs/)
@@ -18,7 +18,7 @@
 
 ---
 
-*A zero-dependency, high-performance terminal coding assistant with cross-platform launchers. / 零依赖、高性能、跨平台启动器的终端编程助手。*
+*A lightweight, high-performance terminal coding assistant with cross-platform launchers. / 轻量、高性能、跨平台启动器的终端编程助手。*
 
 </div>
 
@@ -191,7 +191,7 @@ ASTRID_MODEL_MODE=mock python -m astrid.main
 | Python 文件数 | 69 |
 | 代码行数 | ~15,000 |
 | 内置工具 | 30+ |
-| 外部依赖 | **0** |
+| 外部依赖 | **2 runtime Python packages** |
 | 优化点 | **93+** |
 | 测试通过率 | **98.9%** |
 | 代码可读性 | **9/10** |
@@ -414,7 +414,7 @@ ASTRID_MODEL_MODE=mock python -m astrid.main
 | Python files | 69 |
 | Lines of code | ~15,000 |
 | Built-in tools | 30+ |
-| External dependencies | **0** |
+| External dependencies | **2 runtime Python packages** |
 | Optimizations | **93+** |
 | Test pass rate | **98.9%** |
 | Code readability | **9/10** |
