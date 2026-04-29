@@ -22,7 +22,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, TextIO
+from typing import Any, Callable
 
 from astrid.agent_loop import run_agent_turn
 from astrid.background_tasks import list_background_tasks
@@ -107,6 +107,11 @@ from astrid.tui.screen import (
     _should_use_alternate_screen,
     _terminal_mode,
     show_cursor,
+)
+from astrid.tui.screen_diff import (
+    SCREEN_CLEAR as _SCREEN_CLEAR,
+    LineDiffScreenWriter as _LineDiffScreenWriter,
+    strip_screen_clear_prefix as _strip_screen_clear_prefix,
 )
 from astrid.tui.theme import theme
 from astrid.tui.transcript import (
@@ -393,54 +398,8 @@ def _is_multi_agent_candidate(input_text: str) -> bool:
 
 _SINGLE_AGENT_BUSY_SPINNER_FRAMES: tuple[str, ...] = ("◜", "◠", "◝", "◞", "◡", "◟")
 _SINGLE_AGENT_DEFAULT_VERB = "Transfiguring"
-_SCREEN_CLEAR = "\x1b[2J\x1b[H"
-_CLEAR_LINE = "\x1b[2K"
 _CURSOR_SAVE = "\x1b7"
 _CURSOR_RESTORE = "\x1b8"
-
-
-def _strip_screen_clear_prefix(frame: str) -> str:
-    if frame.startswith(_SCREEN_CLEAR):
-        return frame[len(_SCREEN_CLEAR):]
-    return frame
-
-
-class _LineDiffScreenWriter:
-    """Write terminal frames by updating only rows whose text changed."""
-
-    def __init__(self, output: TextIO) -> None:
-        self._output = output
-        self._previous_lines: list[str] = []
-        self._has_frame = False
-
-    def reset(self) -> None:
-        self._previous_lines = []
-        self._has_frame = False
-
-    def render(self, frame: str, *, force_full: bool = False) -> str:
-        content = _strip_screen_clear_prefix(frame)
-        next_lines = content.split("\n") if content else [""]
-        if force_full or not self._has_frame:
-            rendered = _SCREEN_CLEAR + content
-            self._output.write(rendered)
-            self._previous_lines = next_lines
-            self._has_frame = True
-            return rendered
-
-        chunks: list[str] = []
-        max_lines = max(len(self._previous_lines), len(next_lines))
-        for index in range(max_lines):
-            previous = self._previous_lines[index] if index < len(self._previous_lines) else ""
-            current = next_lines[index] if index < len(next_lines) else ""
-            if previous == current:
-                continue
-            chunks.append(f"\x1b[{index + 1};1H{_CLEAR_LINE}{current}")
-
-        rendered = "".join(chunks)
-        if rendered:
-            self._output.write(rendered)
-        self._previous_lines = next_lines
-        return rendered
 
 
 def _count_rendered_lines(frame: str, width: int) -> int:
