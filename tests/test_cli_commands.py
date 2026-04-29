@@ -111,6 +111,37 @@ def test_try_handle_local_command_reports_live_mcp_servers(tmp_path: Path) -> No
     assert "prompts=1" in result
 
 
+def test_default_tool_registry_defers_mcp_connection_until_requested(tmp_path: Path) -> None:
+    server_script = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
+    tools = create_default_tool_registry(
+        str(tmp_path),
+        runtime={
+            "mcpServers": {
+                "fake": {
+                    "command": "python",
+                    "args": [str(server_script)],
+                    "protocol": "newline-json",
+                }
+            }
+        },
+    )
+    try:
+        servers = tools.get_mcp_servers()
+        assert servers[0]["name"] == "fake"
+        assert servers[0]["status"] == "configured"
+        assert servers[0]["toolCount"] == 0
+        assert tools.find("mcp__fake__echo") is None
+
+        tools.refresh_capabilities(connect_mcp=True)
+
+        connected = tools.get_mcp_servers()[0]
+        assert connected["status"] == "connected"
+        assert connected["toolCount"] == 1
+        assert tools.find("mcp__fake__echo") is not None
+    finally:
+        tools.dispose()
+
+
 def test_try_handle_local_command_mcp_triggers_refresh_hook() -> None:
     refreshed: list[str] = []
 
