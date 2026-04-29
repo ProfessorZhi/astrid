@@ -36,8 +36,8 @@
 - 本地验证结果放在 `verification/`，该目录被 Git 忽略，不上传 GitHub。
 - 做 coding-agent 横向对比前，必须先问用户要和谁对比。默认优先建议 Claude Code，因为本机可在终端输入 `claude` 运行，且接入 MiniMax，成本更低；Codex 可作为对比项，但成本更高。
 - 横向对比时，Astrid、Claude Code、Codex 必须使用同一组 prompt、同一套初始 workspace、同一套外部验收命令。
-- 所有测试 prompt、初始文件、agent 产物、transcript、pytest/验收输出，都必须保存到对应的 `verification/<agent>/<run-name>/` 目录。
-- 评测目录命名要短，并同时包含英文和中文含义：suite 用 `snake-贪吃蛇` 这种名字；agent run 用 `YYYY-MM-DD-snake-贪吃蛇` 这种名字。
+- 所有测试 prompt、初始文件、agent 产物、transcript、pytest/验收输出，都必须保存到对应的 `verification/runs/<agent-platform>/<model>/<run-name>/` 目录。
+- 评测目录命名要短，并同时包含英文和中文含义：suite 用 `snake-贪吃蛇` 这种名字；agent run 用 `YYYY-MM-DD-snake-贪吃蛇` 这种名字。平台和模型不要揉进 run 名字里，要放在上层目录。
 - 评测结论必须区分“第一轮结果”和“多轮修复后结果”。第一轮失败就是第一轮失败；如果二轮通过，要记录二轮修复过程，不能混成一次通过。
 - 严格评测禁止把“改写验收测试后 pytest 通过”算作通过。除非 suite 明确允许改测试，否则 agent 修改、删除、弱化原始验收测试都算失败。
 - 完成一个可验证闭环后再 commit / push。不要把临时验证目录、transcript、缓存文件提交进仓库。
@@ -132,13 +132,22 @@
 - 本地验证资产统一放在 `verification/`，该目录被 Git 忽略，不上传 GitHub。
 - 不同 agent 按目录分开：
   - `verification/suites/<英文-中文测试名>/`
-  - `verification/astrid/<日期-英文-中文测试名>/`
-  - `verification/claudecode/<日期-英文-中文测试名>/`
-  - `verification/codex/<日期-英文-中文测试名>/`
+  - `verification/runs/<agent-platform>/<model>/<日期-英文-中文测试名>/`
+- 平台和模型分层，不要混成一个目录名。平台表示谁执行 agent workflow，模型表示背后的模型/供应商配置。
+- 当前推荐平台名：
+  - `astrid`
+  - `claudecode`
+  - `codex-client`
+  - `codexcli`
+- 当前推荐模型名：
+  - `minimax2.7`
+  - `chatgpt5.5-medium`
 - 命名示例：
   - `verification/suites/snake-贪吃蛇/`
-  - `verification/astrid/2026-04-29-snake-贪吃蛇/`
-  - `verification/claudecode/2026-04-29-snake-贪吃蛇/`
+  - `verification/runs/astrid/minimax2.7/2026-04-29-snake-贪吃蛇/`
+  - `verification/runs/claudecode/minimax2.7/2026-04-29-snake-贪吃蛇/`
+  - `verification/runs/codex-client/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`
+  - `verification/runs/codexcli/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`
 - 如果用户没有指定对比对象，先询问。推荐顺序：Claude Code 优先，Codex 其次。
 - Claude Code 测试方式：在终端输入 `claude` 运行。当前本机 Claude Code 接入 MiniMax，成本相对低，适合作为默认横向对比对象。
 - Codex 测试方式：使用 Codex 终端/CLI 运行同样任务。Codex 成本更高，只有用户确认需要对比时再跑。
@@ -148,8 +157,9 @@
   - `run_eval.*`：评测脚本或启动命令。
   - `*-transcript.txt`：终端/模型输出记录。
   - `results.*` 或 notes：记录 pass/fail、失败原因、二轮修复情况、验收命令输出。
-- 当前 Astrid 真实模型编程能力评测在：`verification/astrid/2026-04-29-coding-basic-编程基础/`。
-- 当前 Astrid vs Claude Code 贪吃蛇对比评测在：`verification/astrid/2026-04-29-snake-贪吃蛇/` 和 `verification/claudecode/2026-04-29-snake-贪吃蛇/`。
+- 当前 Astrid 真实模型编程能力评测在：`verification/runs/astrid/minimax2.7/2026-04-29-coding-basic-编程基础/`。
+- 当前 Astrid vs Claude Code 贪吃蛇对比评测在：`verification/runs/astrid/minimax2.7/2026-04-29-snake-贪吃蛇/` 和 `verification/runs/claudecode/minimax2.7/2026-04-29-snake-贪吃蛇/`。
+- 当前 Codex 客户端 GPT-5.5 medium 参考产物在：`verification/runs/codex-client/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`。它是 Codex 客户端生成/整理的参考答案，不等同于 Codex CLI 自主运行。
 - 贪吃蛇这一轮的记录口径：Astrid 第一轮严格失败；二轮后 pytest 可过，但改写了验收测试，所以严格结果仍是失败。Claude Code 第一轮被预算截断，二轮后保留原验收测试并通过。
 - 用 stdin 管道测试 Astrid 时要注意：这是 non-TTY 模式，写文件/改文件不会弹权限确认。除非临时把目标文件加入 `~/.astrid/permissions.json` 的 `allowedEditPatterns`，否则写入会失败。
 - 临时预授权必须测试后恢复。原来没有 `permissions.json` 就删回不存在；原来有文件就恢复原始内容。
@@ -161,4 +171,4 @@
 - 多 Agent 改动：`python -m pytest tests/test_orchestration.py tests/test_sub_agents.py -q`
 - Context / memory / session 改动：先跑窄测试，再跑 `python -m pytest tests -q -k "context or memory or session"`
 - 文档 / metadata 改动：`python -m pytest tests/test_cli_commands.py tests/test_screen.py -q`
-- 真实 coding-agent 评测：在 `verification/<agent>/...` 下新建 run，保存 prompt、workspace、产物、transcript、验收结果，然后在 agent 外部运行 workspace 的验收测试。
+- 真实 coding-agent 评测：在 `verification/runs/<agent-platform>/<model>/...` 下新建 run，保存 prompt、workspace、产物、transcript、验收结果，然后在 agent 外部运行 workspace 的验收测试。
