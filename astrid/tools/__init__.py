@@ -1,3 +1,4 @@
+import os
 from dataclasses import asdict
 
 from astrid.mcp import create_mcp_backed_tools
@@ -36,6 +37,30 @@ from astrid.tools.todo_write import todo_write_tool
 from astrid.tools.web_fetch import web_fetch_tool
 from astrid.tools.web_search import web_search_tool
 from astrid.tools.write_file import write_file_tool
+
+
+def _should_eager_start_mcp() -> bool:
+    value = os.environ.get("ASTRID_EAGER_MCP", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _configured_mcp_server_summaries(mcp_servers: dict[str, dict]) -> list[dict]:
+    summaries: list[dict] = []
+    for name, config in mcp_servers.items():
+        status = "disabled" if config.get("enabled") is False else "configured"
+        summaries.append(
+            {
+                "name": name,
+                "command": config.get("command", ""),
+                "status": status,
+                "toolCount": 0,
+                "resourceCount": None,
+                "promptCount": None,
+                "protocol": config.get("protocol"),
+                "error": None,
+            }
+        )
+    return summaries
 
 
 def create_default_tool_registry(
@@ -81,12 +106,20 @@ def create_default_tool_registry(
         create_load_skill_tool(cwd),
     ]
 
-    def _build_catalog() -> ToolCatalog:
+    def _build_catalog(*, connect_mcp: bool = False) -> ToolCatalog:
         skills = [asdict(skill) for skill in discover_skills(cwd)]
-        mcp = create_mcp_backed_tools(
-            cwd=cwd,
-            mcp_servers=dict(runtime.get("mcpServers", {})) if runtime else {},
-        )
+        configured_mcp = dict(runtime.get("mcpServers", {})) if runtime else {}
+        if connect_mcp or _should_eager_start_mcp():
+            mcp = create_mcp_backed_tools(
+                cwd=cwd,
+                mcp_servers=configured_mcp,
+            )
+        else:
+            mcp = {
+                "tools": [],
+                "servers": _configured_mcp_server_summaries(configured_mcp),
+                "dispose": None,
+            }
         return ToolCatalog(
             tools=[*static_tools, *mcp["tools"]],
             skills=skills,
@@ -94,7 +127,7 @@ def create_default_tool_registry(
             disposer=mcp["dispose"],
         )
 
-    catalog = _build_catalog()
+    catalog = _build_catalog(connect_mcp=False)
 
     if advanced_memory_mgr or skill_engine or bootstrap_system:
         from astrid.tools.advanced_memory_tools import initialize as init_advanced_tools

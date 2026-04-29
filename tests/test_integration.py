@@ -110,6 +110,7 @@ def test_system_prompt_exposes_project_skills_and_connected_mcp(tmp_path: Path, 
 
     monkeypatch.setenv("ANTHROPIC_MODEL", "MiniMax-M2.7")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ASTRID_EAGER_MCP", "1")
 
     tools = create_default_tool_registry(
         str(tmp_path),

@@ -336,7 +336,7 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
 
     if user_input == "/mcp":
         if tools is not None and hasattr(tools, "refresh_capabilities"):
-            tools.refresh_capabilities()
+            tools.refresh_capabilities(connect_mcp=True)
         servers = tools.get_mcp_servers() if tools else []
         if not servers:
             return "No MCP servers configured. Add mcpServers to ~/.astrid/settings.json, ~/.astrid/mcp.json, or project .mcp.json."

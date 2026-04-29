@@ -164,10 +164,13 @@ class ToolRegistry:
         except Exception as error:  # noqa: BLE001
             return ToolResult(ok=False, output=f"{type(tool).__name__} error: {error}")
 
-    def refresh_capabilities(self) -> None:
+    def refresh_capabilities(self, *, connect_mcp: bool = False) -> None:
         if self._refresh_catalog is None:
             return
-        catalog = self._refresh_catalog()
+        try:
+            catalog = self._refresh_catalog(connect_mcp=connect_mcp)
+        except TypeError:
+            catalog = self._refresh_catalog()
         old_disposer = self._disposer
         self._tools = list(catalog.tools)
         self._skills = list(catalog.skills)
