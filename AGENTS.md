@@ -10,6 +10,23 @@
 - 不要回滚用户或其他 agent 在别的分支/worktree 上的改动。文件不在你的任务边界内，就不要碰。
 - 遇到问题先追根因，不做“看起来能缓解”的补丁。每个决策都要能回答为什么。
 
+## 参考源码和资料
+
+后续改 Astrid 时，必须多参考 Claude Code 和 Codex 的真实实现，不要只凭产品印象或二手总结下判断。
+
+- Codex 官方源码：`https://github.com/openai/codex`
+- Claude Code TypeScript 源码本地路径：`F:\agent_project\codingagent\claudecodes\claudecodets`
+- Claude Code 学习网站：`https://claudecn.com/`
+- Claude Code 代码学习站：`https://code.claudecn.com/`
+
+参考方式：
+
+- 做 TUI/runtime/权限/sandbox/headless exec/MCP 时，优先看 Codex 的 Rust CLI/TUI/runtime 分层。
+- 做 agent loop、Todo、Subagent、Skills、Hooks、Memory、Steering、权限模式时，优先看本地 Claude Code TypeScript 源码和 Claude Code 学习站。
+- 做 Astrid 代码改动前，先定位 Astrid 当前对应模块，再查参考项目里相近模块。结论必须写清楚“本地 Astrid 现状是什么、参考项目怎么做、这次只借鉴哪一部分”。
+- 不要把参考项目的概念照搬成 Astrid 已实现能力。比如 Astrid 当前只有 skills/MCP/hooks 等扩展面，不要直接称为完整 plugin system；当前 steering 是 interrupt-and-replan，不要说成复杂 mid-token 注入。
+- 如果参考资料来自网页，结论要标注来源 URL；如果来自本地 Claude Code 源码，结论要标注本地文件路径。
+
 ## 当前工作流
 
 - 默认在 `master` 上保持可运行、可测试、可推送状态。
