@@ -116,3 +116,22 @@ def test_compile_result_summary_reflects_failed_status() -> None:
     assert "[Sub-agent General failed]" in summary
     assert "Status: failed" in summary
     assert "Error: permission denied" in summary
+
+
+def test_cancelled_agent_summary_is_terminal_and_reportable() -> None:
+    manager = SubAgentManager(parent_session_id="session-1")
+    agent = manager.spawn_agent(AgentType.PLAN, "stop after planning")
+
+    assert manager.cancel_agent(agent.id, "parent task cancelled") is True
+
+    summary = manager.compile_result_summary(agent.id)
+    report = manager.compile_merge_report()
+
+    assert manager.is_agent_terminal(agent.id) is True
+    assert "[Sub-agent Plan cancelled]" in summary
+    assert "Status: cancelled" in summary
+    assert "Error: parent task cancelled" in summary
+    assert report["total"] == 1
+    assert report["cancelled"] == 1
+    assert report["active"] == 0
+    assert report["ready_to_merge"] is False

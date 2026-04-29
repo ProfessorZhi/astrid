@@ -3,9 +3,12 @@ from astrid.orchestration import (
     WorkerRole,
     WorkerRuntimeState,
     archive_worker,
+    build_merge_summary,
     create_runtime,
     get_phase_label,
     get_phase_verb,
+    mark_worker_cancelled,
+    mark_worker_failed,
     mark_review_required,
     mark_worker_reported,
     request_spawn,
@@ -57,6 +60,71 @@ def test_archive_worker_moves_runtime_to_done_when_all_workers_are_archived() ->
 
     assert runtime.workers[worker.id].state == WorkerRuntimeState.ARCHIVED
     assert runtime.task_state == TaskRuntimeState.DONE
+
+
+def test_worker_failed_marks_runtime_failed_and_exposes_merge_summary() -> None:
+    runtime = create_runtime("Handle worker failure")
+    worker = runtime.spawn_worker(
+        name="Pascal",
+        role=WorkerRole.CODE_WORKER,
+        mission="patch lifecycle",
+        scope="orchestration only",
+    )
+
+    mark_worker_failed(runtime, worker.id, "tool permission denied")
+
+    assert runtime.task_state == TaskRuntimeState.FAILED
+    assert runtime.workers[worker.id].state == WorkerRuntimeState.FAILED
+    assert runtime.workers[worker.id].latest_event == "failed"
+    assert runtime.workers[worker.id].error == "tool permission denied"
+    assert build_merge_summary(runtime) == {
+        "total": 1,
+        "reported": 0,
+        "archived": 0,
+        "failed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "ready_to_merge": False,
+        "has_failures": True,
+        "has_cancellations": False,
+    }
+
+
+def test_reported_workers_are_ready_for_merge_summary() -> None:
+    runtime = create_runtime("Merge reported worker output")
+    worker = runtime.spawn_worker(
+        name="Curie",
+        role=WorkerRole.CODE_WORKER,
+        mission="summarize patch",
+        scope="changed files",
+    )
+
+    mark_worker_reported(runtime, worker.id, "ready for parent merge")
+
+    summary = build_merge_summary(runtime)
+
+    assert summary["reported"] == 1
+    assert summary["pending"] == 0
+    assert summary["ready_to_merge"] is True
+    assert summary["has_failures"] is False
+
+
+def test_worker_cancelled_marks_runtime_failed_without_losing_reason() -> None:
+    runtime = create_runtime("Handle cancellation")
+    worker = runtime.spawn_worker(
+        name="Noether",
+        role=WorkerRole.CONTEXT_SCOUT,
+        mission="inspect files",
+        scope="read only",
+    )
+
+    mark_worker_cancelled(runtime, worker.id, "superseded by parent task")
+
+    assert runtime.task_state == TaskRuntimeState.FAILED
+    assert runtime.workers[worker.id].state == WorkerRuntimeState.CANCELLED
+    assert runtime.workers[worker.id].latest_event == "cancelled"
+    assert runtime.workers[worker.id].error == "superseded by parent task"
+    assert build_merge_summary(runtime)["has_cancellations"] is True
 
 
 def test_get_phase_label_maps_runtime_states_to_short_ui_labels() -> None:

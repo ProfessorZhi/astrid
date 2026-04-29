@@ -73,6 +73,7 @@ class WorkerRuntimeRecord:
     state: WorkerRuntimeState = WorkerRuntimeState.QUEUED
     latest_event: str = ""
     result: str = ""
+    error: str = ""
     spinner_verb: str = "Working"
 
 
@@ -138,6 +139,27 @@ def mark_worker_reported(runtime: OrchestratorState, worker_id: str, result: str
     set_phase(runtime, TaskRuntimeState.COLLECTING, f"Collecting reports from {worker.name}...")
 
 
+def mark_worker_failed(runtime: OrchestratorState, worker_id: str, error: str) -> None:
+    """Record a failed worker and mark the orchestration as failed."""
+
+    worker = runtime.workers[worker_id]
+    worker.state = WorkerRuntimeState.FAILED
+    worker.error = error
+    worker.latest_event = "failed"
+    set_phase(runtime, TaskRuntimeState.FAILED, f"{worker.name} failed: {error}")
+
+
+def mark_worker_cancelled(runtime: OrchestratorState, worker_id: str, reason: str = "") -> None:
+    """Record a cancelled worker and mark the orchestration as stopped."""
+
+    worker = runtime.workers[worker_id]
+    worker.state = WorkerRuntimeState.CANCELLED
+    worker.error = reason
+    worker.latest_event = "cancelled"
+    suffix = f": {reason}" if reason else "."
+    set_phase(runtime, TaskRuntimeState.FAILED, f"{worker.name} cancelled{suffix}")
+
+
 def mark_review_required(runtime: OrchestratorState, reviewer_summary: str = "") -> None:
     """Mark the collected work as requiring review."""
 
@@ -155,6 +177,29 @@ def archive_worker(runtime: OrchestratorState, worker_id: str) -> None:
 
     if all(record.state == WorkerRuntimeState.ARCHIVED for record in runtime.workers.values()):
         set_phase(runtime, TaskRuntimeState.DONE, "All workers archived.")
+
+
+def build_merge_summary(runtime: OrchestratorState) -> dict[str, bool | int]:
+    """Return structured report/merge status for orchestration consumers."""
+
+    workers = list(runtime.workers.values())
+    reported = sum(worker.state == WorkerRuntimeState.REPORTING for worker in workers)
+    archived = sum(worker.state == WorkerRuntimeState.ARCHIVED for worker in workers)
+    failed = sum(worker.state == WorkerRuntimeState.FAILED for worker in workers)
+    cancelled = sum(worker.state == WorkerRuntimeState.CANCELLED for worker in workers)
+    pending = len(workers) - reported - archived - failed - cancelled
+
+    return {
+        "total": len(workers),
+        "reported": reported,
+        "archived": archived,
+        "failed": failed,
+        "cancelled": cancelled,
+        "pending": pending,
+        "ready_to_merge": bool(workers) and pending == 0 and failed == 0 and cancelled == 0,
+        "has_failures": failed > 0,
+        "has_cancellations": cancelled > 0,
+    }
 
 
 def set_phase(runtime: OrchestratorState, task_state: TaskRuntimeState, narrative: str) -> None:
@@ -204,9 +249,12 @@ __all__ = [
     "WorkerRuntimeRecord",
     "WorkerRuntimeState",
     "archive_worker",
+    "build_merge_summary",
     "create_runtime",
     "get_phase_label",
     "get_phase_verb",
+    "mark_worker_cancelled",
+    "mark_worker_failed",
     "mark_review_required",
     "mark_worker_reported",
     "request_spawn",
