@@ -16,6 +16,9 @@
 - 大功能先拆独立分支或 worktree；同一轮不要让多个 agent 同时大改 `astrid/tty_app.py`。
 - 修改代码前先补能复现问题的测试；修改后跑窄测试，再按风险跑全量测试。
 - 本地验证结果放在 `verification/`，该目录被 Git 忽略，不上传 GitHub。
+- 做 coding-agent 横向对比前，必须先问用户要和谁对比。默认优先建议 Claude Code，因为本机可在终端输入 `claude` 运行，且接入 MiniMax，成本更低；Codex 可作为对比项，但成本更高。
+- 横向对比时，Astrid、Claude Code、Codex 必须使用同一组 prompt、同一套初始 workspace、同一套外部验收命令。
+- 所有测试 prompt、初始文件、agent 产物、transcript、pytest/验收输出，都必须保存到对应的 `verification/<agent>/<run-name>/` 目录。
 - 完成一个可验证闭环后再 commit / push。不要把临时验证目录、transcript、缓存文件提交进仓库。
 
 ## 当前进度
@@ -108,13 +111,17 @@
 - 本地验证资产统一放在 `verification/`，该目录被 Git 忽略，不上传 GitHub。
 - 不同 agent 按目录分开：
   - `verification/astrid/<日期-测试名>/`
-  - `verification/codex/<日期-测试名>/`
   - `verification/claudecode/<日期-测试名>/`
+  - `verification/codex/<日期-测试名>/`
+- 如果用户没有指定对比对象，先询问。推荐顺序：Claude Code 优先，Codex 其次。
+- Claude Code 测试方式：在终端输入 `claude` 运行。当前本机 Claude Code 接入 MiniMax，成本相对低，适合作为默认横向对比对象。
+- Codex 测试方式：使用 Codex 终端/CLI 运行同样任务。Codex 成本更高，只有用户确认需要对比时再跑。
 - 每次测试目录应包含：
-  - `workspace/`：隔离任务工作区。
+  - `prompts/`：保存实际输入给 agent 的 prompt，不能只写摘要。
+  - `workspace/`：隔离任务工作区和 agent 修改后的产物。
   - `run_eval.*`：评测脚本或启动命令。
   - `*-transcript.txt`：终端/模型输出记录。
-  - 可选 notes：记录 pass/fail、失败原因、二轮修复情况。
+  - `results.*` 或 notes：记录 pass/fail、失败原因、二轮修复情况、验收命令输出。
 - 当前 Astrid 真实模型编程能力评测在：`verification/astrid/2026-04-29-real-model-coding-eval/`。
 - 用 stdin 管道测试 Astrid 时要注意：这是 non-TTY 模式，写文件/改文件不会弹权限确认。除非临时把目标文件加入 `~/.astrid/permissions.json` 的 `allowedEditPatterns`，否则写入会失败。
 - 临时预授权必须测试后恢复。原来没有 `permissions.json` 就删回不存在；原来有文件就恢复原始内容。
@@ -126,4 +133,4 @@
 - 多 Agent 改动：`python -m pytest tests/test_orchestration.py tests/test_sub_agents.py -q`
 - Context / memory / session 改动：先跑窄测试，再跑 `python -m pytest tests -q -k "context or memory or session"`
 - 文档 / metadata 改动：`python -m pytest tests/test_cli_commands.py tests/test_screen.py -q`
-- 真实 coding-agent 评测：在 `verification/<agent>/...` 下新建 run，保存 transcript，然后在 agent 外部运行 workspace 的验收测试。
+- 真实 coding-agent 评测：在 `verification/<agent>/...` 下新建 run，保存 prompt、workspace、产物、transcript、验收结果，然后在 agent 外部运行 workspace 的验收测试。
