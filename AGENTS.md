@@ -94,7 +94,7 @@
 ## 2026-05-01 交付列车进度
 
 - 已完成：默认 inline TUI 恢复共享 welcome pet；inline 权限请求显示数字选择面板；inline progress/tool status 通过回调节流到当前状态行，避免重复刷 prompt。
-- 已完成：full TUI 开始物理拆分，已抽出 `ui/full/renderer.py`、`input_box.py`、`viewport.py`、`status.py`、`writer.py`；`tty_app.py` 仍是 orchestrator，后续继续缩小。
+- 已完成：full TUI 开始物理拆分，已抽出 `ui/full/renderer.py`、`input_box.py`、`viewport.py`、`status.py`、`writer.py`、`state.py`、`tool_progress.py`、`approval.py`；`tty_app.py` 仍是 orchestrator，后续继续缩小。
 - 已完成：权限第二阶段的最小 policy-only 增强，新增 `ASTRID_WORKSPACE_ALLOWLIST`，并继续在 `eval-workspace` 中拒绝危险命令。
 - 已完成：评测 harness 增加 acceptance 执行、`metrics.json`、transcript 字节数、轮次、源码行数/字节数、`token_usage: 未采集` 等成本代理。
 - 已完成：CLI smoke 显式用 UTF-8 捕获输出，避免 Windows GBK reader warning；新增中文/长会话相关回归。
@@ -140,7 +140,7 @@
    - 同时补上非 TTY / eval-workspace 的自动化执行能力；不要把非 TTY 自动跑混成默认真实终端评测。
 
 3. **TUI 重构**
-   - 当前 `tty_app.py` 已开始拆分到 renderer、input box、transcript viewport、status/progress、terminal writer，但还不是 thin orchestrator。
+   - 当前 `tty_app.py` 已开始拆分到 renderer、input box、transcript viewport、status/progress、terminal writer、state dataclasses、输入/粘贴 helper、tool progress helper、approval presenter，但还不是 thin orchestrator。
    - 继续对照 Codex inline viewport/bottom pane 和 Claude Code Ink/PromptInput，优先保持默认 inline 可滚动、可复制、权限面板清楚。
    - 目标是最终拥有稳定 controlled TUI；在此之前默认终端体验必须保持可用、可滚动、可复制。
 
@@ -157,8 +157,8 @@
 3. **TUI runtime 拆分**
    - 目标：降低 `tty_app.py` 复杂度，继续接近 Codex/Claude Code 的组件化 TUI runtime。
    - 已完成：`tty_app.py` 已移动到 `src/astrid/ui/full/tty_app.py`；普通 full TUI 模型回合已改为调用 `RuntimeController.execute_agent_turn(...)`，不再直接调用 `run_agent_turn`；多 agent 分支的 permission turn 已改为通过 `RuntimeController` 包装。
-   - 已完成：第一批拆出 renderer、input box、status/progress、transcript viewport、screen writer 模块。
-   - 要做：继续把 `tty_app.py` 缩成 thin orchestrator；继续把 full TUI 的多 agent worker 编排、结果合成和 permission presenter 抽成 runtime-owned flow + UI callback。
+   - 已完成：第一批拆出 renderer、input box、status/progress、transcript viewport、screen writer 模块；第二批抽出 full TUI state dataclasses、输入/粘贴 buffer helper、tool progress/collapse helper、approval presenter。
+   - 要做：继续把 `tty_app.py` 缩成 thin orchestrator；下一批优先抽 history/session command handlers、多 agent worker 编排和结果合成，逐步改成 runtime-owned flow + UI callback。
    - 验收：现有 TUI 测试全绿；长 transcript 下普通输入不触发全量 transcript render；prompt/footer 仍 pinned-bottom。
 
 4. **中文输出编码修复**

@@ -19,7 +19,6 @@ import sys
 import threading
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
@@ -66,7 +65,6 @@ from astrid.state import AppState, Store, create_app_store, format_app_state_sum
 from astrid.core.tooling import ToolContext, ToolRegistry
 from astrid.tui.chrome import (
     _cached_terminal_size,
-    get_permission_prompt_max_scroll_offset,
     render_banner,
     render_footer_bar,
     render_panel,
@@ -144,6 +142,42 @@ from astrid.ui.full.viewport import (
     slice_top_anchored_content_lines as _viewport_slice_top_anchored_content_lines,
 )
 from astrid.ui.full.renderer import render_full_welcome as _render_full_welcome
+from astrid.ui.full.state import AggregatedEditProgress, PendingApproval, ScreenState, TtyAppArgs
+from astrid.ui.full.input_box import (
+    adjust_paste_display_after_delete as _input_adjust_paste_display_after_delete,
+    clear_paste_display as _input_clear_paste_display,
+    cursor_at_paste_end as _input_cursor_at_paste_end,
+    cursor_at_paste_start as _input_cursor_at_paste_start,
+    delete_paste_block_at_cursor as _input_delete_paste_block_at_cursor,
+    delete_paste_block_before_cursor as _input_delete_paste_block_before_cursor,
+    has_valid_paste_display as _input_has_valid_paste_display,
+    insert_input_text as _input_insert_input_text,
+    insert_paste_text as _input_insert_paste_text,
+    normalize_pasted_text as _input_normalize_pasted_text,
+)
+from astrid.ui.full.approval import (
+    confirm_pending_choice as _approval_confirm_pending_choice,
+    handle_pending_approval_event as _approval_handle_pending_approval_event,
+    handle_pending_approval_key as _approval_handle_pending_approval_key,
+    handle_pending_approval_text as _approval_handle_pending_approval_text,
+    handle_pending_approval_wheel as _approval_handle_pending_approval_wheel,
+    move_pending_approval_selection as _approval_move_pending_approval_selection,
+    render_shell_permission_prompt as _approval_render_shell_permission_prompt,
+    scroll_pending_approval_by as _approval_scroll_pending_approval_by,
+    select_pending_choice as _approval_select_pending_choice,
+    toggle_pending_approval_expand as _approval_toggle_pending_approval_expand,
+)
+from astrid.ui.full.tool_progress import (
+    apply_tool_result_visual_state as _progress_apply_tool_result_visual_state,
+    collapse_tool_entry as _progress_collapse_tool_entry,
+    finalize_dangling_running_tools as _progress_finalize_dangling_running_tools,
+    get_running_tool_entries as _progress_get_running_tool_entries,
+    mark_running_tools_as_error as _progress_mark_running_tools_as_error,
+    mark_unfinished_tools as _progress_mark_unfinished_tools,
+    set_tool_entry_collapse_phase as _progress_set_tool_entry_collapse_phase,
+    summarize_collapsed_tool_body as _progress_summarize_collapsed_tool_body,
+    update_tool_entry as _progress_update_tool_entry,
+)
 
 # ---------------------------------------------------------------------------
 # Terminal size 鈥?use unified cache from chrome module
@@ -190,107 +224,6 @@ def _should_defer_chunk_for_paste_coalescing(chunk: str) -> bool:
 def _should_record_progress_entries(terminal_mode: str) -> bool:
     """Return True when progress updates should be appended into transcript."""
     return False
-
-
-# ---------------------------------------------------------------------------
-# Types
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class TtyAppArgs:
-    runtime: dict | None
-    tools: ToolRegistry
-    model: ModelAdapter
-    messages: list[ChatMessage]
-    cwd: str
-    permissions: PermissionManager
-    controller: RuntimeController | None = None
-
-
-@dataclass
-class PendingApproval:
-    request: dict[str, Any]
-    resolve: Callable[[dict[str, Any]], None]
-    details_expanded: bool = False
-    details_scroll_offset: int = 0
-    selected_choice_index: int = 0
-    feedback_mode: bool = False
-    feedback_input: str = ""
-
-
-@dataclass
-class AggregatedEditProgress:
-    entry_id: int
-    tool_name: str
-    path: str
-    total: int = 1
-    completed: int = 0
-    errors: int = 0
-    last_output: str = ""
-
-
-@dataclass
-class ScreenState:
-    input: str = ""
-    cursor_offset: int = 0
-    paste_display_start: int | None = None
-    paste_display_end: int | None = None
-    paste_display_line_count: int = 0
-    queued_inputs: list[str] = field(default_factory=list)
-    steering_inputs: list[str] = field(default_factory=list)
-    transcript: list[TranscriptEntry] = field(default_factory=list)
-    transcript_scroll_offset: int = 0
-    selected_slash_index: int = 0
-    status: str | None = None
-    active_tool: str | None = None
-    recent_tools: list[dict[str, str]] = field(default_factory=list)
-    history: list[str] = field(default_factory=list)
-    history_index: int = 0
-    history_draft: str = ""
-    next_entry_id: int = 1
-    pending_approval: PendingApproval | None = None
-    is_busy: bool = False
-    # Session persistence
-    session: SessionData | None = None
-    autosave: AutosaveManager | None = None
-    # State management (Zustand-style)
-    app_state: Store[AppState] | None = None
-    # Cost tracking
-    cost_tracker: CostTracker | None = None
-    # Background agent thread
-    agent_thread: Any = None
-    agent_result: dict | None = None
-    agent_lock: Any = None
-    tool_start_time: float | None = None
-    orchestration: OrchestratorState | None = None
-    orchestration_entry_id: int | None = None
-    sub_agent_manager: SubAgentManager | None = None
-    companion_enabled: bool = True
-    companion_species: str = "duck"
-    animation_frame: int = 0
-    buddy_profile: BuddyProfile | None = None
-    buddy_runtime: BuddyRuntimeState = field(default_factory=BuddyRuntimeState)
-    imported_pet_name: str | None = None
-    imported_pet_source: str | None = None
-    imported_pet_ansi: str | None = None
-    imported_pet_ascii: str | None = None
-    imported_pet_mode: str = "ansi"
-    imported_pet_active: bool = False
-    busy_verb: str = "Transfiguring"
-    current_action_summary: str | None = None
-    wheel_debug_last_direction: str | None = None
-    wheel_debug_event_count: int = 0
-    wheel_debug_fallback_active: bool = False
-    wheel_debug_fallback_hook: bool = False
-    wheel_debug_session_title: str | None = None
-    wheel_debug_foreground_title: str | None = None
-    wheel_debug_raw_callback_count: int = 0
-    wheel_debug_matched_callback_count: int = 0
-    wheel_debug_callback_foreground_title: str | None = None
-    welcome_tip_index: int = 0
-    welcome_tip_rotated_at: float = 0.0
-    ctrl_c_exit_armed: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -954,20 +887,7 @@ def _summarize_worker_result(instance: Any) -> str:
 
 
 def _mark_running_tools_as_error(state: ScreenState, message: str) -> None:
-    """Mark all currently running tools as failed with the given error message.
-    
-    This is used when a turn ends unexpectedly while tools are still running.
-    """
-    for entry in state.transcript:
-        if entry.kind == "tool" and entry.status == "running":
-            entry.status = "error"
-            entry.body = message
-            entry.collapsed = False
-            entry.collapsedSummary = None
-            entry.collapsePhase = None
-            state.recent_tools.append({"name": entry.toolName or "unknown", "status": "error"})
-    if any(e.kind == "tool" and e.status == "error" for e in state.transcript):
-        state.active_tool = None
+    _progress_mark_running_tools_as_error(state, message)
 
 
 def _update_tool_entry(
@@ -976,70 +896,27 @@ def _update_tool_entry(
     status: str,
     body: str,
 ) -> None:
-    """Update a tool entry's status and output body.
-    
-    Automatically un-collapses the entry so the new content is visible.
-    """
-    for entry in state.transcript:
-        if entry.id == entry_id and entry.kind == "tool":
-            entry.status = status
-            entry.body = body
-            entry.collapsed = False
-            entry.collapsedSummary = None
-            entry.collapsePhase = None
-            return
+    _progress_update_tool_entry(state, entry_id, status, body)
 
 
 def _set_tool_entry_collapse_phase(state: ScreenState, entry_id: int, phase: int) -> None:
-    """Set the collapse animation phase for a tool entry."""
-    for entry in state.transcript:
-        if entry.id == entry_id and entry.kind == "tool" and entry.status != "running":
-            entry.collapsePhase = phase
-            return
+    _progress_set_tool_entry_collapse_phase(state, entry_id, phase)
 
 
 def _collapse_tool_entry(state: ScreenState, entry_id: int, summary: str) -> None:
-    """Collapse a tool entry to show only a summary line.
-    
-    Used for completed tools to reduce visual clutter in the transcript.
-    """
-    for entry in state.transcript:
-        if entry.id == entry_id and entry.kind == "tool" and entry.status != "running":
-            entry.collapsePhase = None
-            entry.collapsed = True
-            entry.collapsedSummary = summary
-            return
+    _progress_collapse_tool_entry(state, entry_id, summary)
 
 
 def _get_running_tool_entries(state: ScreenState) -> list[TranscriptEntry]:
-    """Get all transcript entries that are still in 'running' status."""
-    return [e for e in state.transcript if e.kind == "tool" and e.status == "running"]
+    return _progress_get_running_tool_entries(state)
 
 
 def _finalize_dangling_running_tools(state: ScreenState) -> None:
-    """Mark all running tools as errors when a turn ends unexpectedly.
-    
-    This happens when the model stops responding but tools are still active,
-    indicating a potential sync issue or background process.
-    """
-    running = _get_running_tool_entries(state)
-    if running:
-        error_message = (
-            f"{running[0].body}\n\n"
-            "ERROR: Tool did not report a final result before the turn ended. "
-            "This usually means the command kept running in the background "
-            "or the tool lifecycle got out of sync."
-        )
-        _mark_running_tools_as_error(state, error_message)
-        state.status = f"Previous turn ended with {len(running)} unfinished tool call(s)."
+    _progress_finalize_dangling_running_tools(state)
 
 
 def _summarize_collapsed_tool_body(output: str) -> str:
-    line = next(
-        (l.strip() for l in output.split("\n") if l.strip()),
-        "output collapsed",
-    )
-    return line[:140] + "..." if len(line) > 140 else line
+    return _progress_summarize_collapsed_tool_body(output)
 
 
 def _schedule_tool_auto_collapse(
@@ -1441,28 +1318,7 @@ def _build_agent_prompt_region(state: ScreenState) -> str:
 
 
 def _render_shell_permission_prompt(state: ScreenState) -> str:
-    pending = state.pending_approval
-    request = pending.request if pending is not None else {}
-    lines = ["Action Required", request.get("summary", "Permission Request")]
-    details = request.get("details", [])
-    for detail in details:
-        for line in str(detail).splitlines():
-            stripped = line.strip()
-            if stripped:
-                lines.append(stripped)
-                break
-        if len(lines) >= 4:
-            break
-    lines.append("")
-    lines.append("Use number keys, arrows + Enter, or Esc to reject.")
-    choices = request.get("choices", [])
-    selected = getattr(pending, "selected_choice_index", 0) if pending is not None else 0
-    for index, choice in enumerate(choices):
-        marker = ">" if index == selected else " "
-        key = choice.get("key", "")
-        label = choice.get("label", "")
-        lines.append(f"{marker} {key} {label}".rstrip())
-    return "\n".join(lines)
+    return _approval_render_shell_permission_prompt(state)
 
 
 def _enqueue_next_turn(state: ScreenState, input_text: str) -> bool:
@@ -1547,35 +1403,15 @@ def _jump_transcript_to_edge(args: TtyAppArgs, state: ScreenState, target: str) 
 
 
 def _scroll_pending_approval_by(state: ScreenState, delta: int) -> bool:
-    pending = state.pending_approval
-    if not pending or not pending.details_expanded:
-        return False
-    max_offset = get_permission_prompt_max_scroll_offset(pending.request, expanded=True)
-    next_offset = max(0, min(max_offset, pending.details_scroll_offset + delta))
-    if next_offset == pending.details_scroll_offset:
-        return False
-    pending.details_scroll_offset = next_offset
-    return True
+    return _approval_scroll_pending_approval_by(state, delta)
 
 
 def _toggle_pending_approval_expand(state: ScreenState) -> bool:
-    pending = state.pending_approval
-    if not pending or pending.request.get("kind") != "edit":
-        return False
-    pending.details_expanded = not pending.details_expanded
-    pending.details_scroll_offset = 0
-    return True
+    return _approval_toggle_pending_approval_expand(state)
 
 
 def _move_pending_approval_selection(state: ScreenState, delta: int) -> bool:
-    pending = state.pending_approval
-    if not pending or pending.feedback_mode:
-        return False
-    total = len(pending.request.get("choices", []))
-    if total <= 0:
-        return False
-    pending.selected_choice_index = (pending.selected_choice_index + delta + total) % total
-    return True
+    return _approval_move_pending_approval_selection(state, delta)
 
 
 def _history_up(state: ScreenState) -> bool:
@@ -2498,106 +2334,43 @@ def _read_clipboard_text() -> str:
 
 
 def _normalize_pasted_text(text: str) -> str:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    return normalized
+    return _input_normalize_pasted_text(text)
 
 
 def _clear_paste_display(state: ScreenState) -> None:
-    state.paste_display_start = None
-    state.paste_display_end = None
-    state.paste_display_line_count = 0
+    _input_clear_paste_display(state)
 
 
 def _has_valid_paste_display(state: ScreenState) -> bool:
-    return (
-        state.paste_display_start is not None
-        and state.paste_display_end is not None
-        and 0 <= state.paste_display_start <= state.paste_display_end <= len(state.input)
-    )
+    return _input_has_valid_paste_display(state)
 
 
 def _insert_paste_text(state: ScreenState, raw_text: str) -> bool:
-    pasted = _normalize_pasted_text(raw_text)
-    paste_start = state.cursor_offset
-    if not _insert_input_text(state, pasted):
-        return False
-    if "\n" in pasted:
-        state.paste_display_start = paste_start
-        state.paste_display_end = paste_start + len(pasted)
-        state.paste_display_line_count = len(pasted.splitlines()) or 1
-    return True
+    return _input_insert_paste_text(state, raw_text)
 
 
 def _insert_input_text(state: ScreenState, text: str) -> bool:
-    if not text:
-        return False
-    insert_at = state.cursor_offset
-    state.input = state.input[:state.cursor_offset] + text + state.input[state.cursor_offset:]
-    state.cursor_offset += len(text)
-    if _has_valid_paste_display(state):
-        text_len = len(text)
-        assert state.paste_display_start is not None
-        assert state.paste_display_end is not None
-        if insert_at <= state.paste_display_start:
-            state.paste_display_start += text_len
-            state.paste_display_end += text_len
-        elif insert_at < state.paste_display_end:
-            _clear_paste_display(state)
-    state.selected_slash_index = 0
-    state.history_index = len(state.history)
-    return True
+    return _input_insert_input_text(state, text)
 
 
 def _adjust_paste_display_after_delete(state: ScreenState, delete_at: int) -> None:
-    if not _has_valid_paste_display(state):
-        return
-    assert state.paste_display_start is not None
-    assert state.paste_display_end is not None
-    if delete_at < state.paste_display_start:
-        state.paste_display_start -= 1
-        state.paste_display_end -= 1
-    elif delete_at < state.paste_display_end:
-        _clear_paste_display(state)
+    _input_adjust_paste_display_after_delete(state, delete_at)
 
 
 def _delete_paste_block_before_cursor(state: ScreenState) -> bool:
-    if not _has_valid_paste_display(state):
-        return False
-    assert state.paste_display_start is not None
-    assert state.paste_display_end is not None
-    if state.paste_display_start < state.cursor_offset <= state.paste_display_end:
-        start = state.paste_display_start
-        end = state.paste_display_end
-        state.input = state.input[:start] + state.input[end:]
-        state.cursor_offset = start
-        _clear_paste_display(state)
-        state.selected_slash_index = 0
-        return True
-    return False
+    return _input_delete_paste_block_before_cursor(state)
 
 
 def _delete_paste_block_at_cursor(state: ScreenState) -> bool:
-    if not _has_valid_paste_display(state):
-        return False
-    assert state.paste_display_start is not None
-    assert state.paste_display_end is not None
-    if state.paste_display_start <= state.cursor_offset < state.paste_display_end:
-        start = state.paste_display_start
-        end = state.paste_display_end
-        state.input = state.input[:start] + state.input[end:]
-        state.cursor_offset = start
-        _clear_paste_display(state)
-        state.selected_slash_index = 0
-        return True
-    return False
+    return _input_delete_paste_block_at_cursor(state)
 
 
 def _cursor_at_paste_start(state: ScreenState) -> bool:
-    return _has_valid_paste_display(state) and state.cursor_offset == state.paste_display_start
+    return _input_cursor_at_paste_start(state)
 
 
 def _cursor_at_paste_end(state: ScreenState) -> bool:
-    return _has_valid_paste_display(state) and state.cursor_offset == state.paste_display_end
+    return _input_cursor_at_paste_end(state)
 
 
 def _win_read_one_key() -> str:
@@ -4000,31 +3773,16 @@ def _handle_pending_approval_event(
     approval_event: threading.Event,
     approval_result: dict[str, Any],
 ) -> None:
-    """Handle input events while a permission approval is pending.
-    
-    ``pending`` is captured by the caller to avoid TOCTOU races with the
-    agent thread (which may set ``state.pending_approval = None`` after an
-    approval event is signalled).
-    """
-    if pending.feedback_mode:
-        _handle_feedback_mode_event(state, event, rerender, approval_event, approval_result)
-        return
-    
-    if isinstance(event, KeyEvent):
-        if _handle_pending_approval_key(state, event, rerender, approval_event, approval_result):
-            return
-    
-    if isinstance(event, TextEvent) and not event.ctrl:
-        if _handle_pending_approval_text(state, event, rerender, approval_event, approval_result):
-            return
-    
-    if isinstance(event, WheelEvent):
-        if not _should_capture_mouse():
-            return
-        state.wheel_debug_event_count += 1
-        state.wheel_debug_last_direction = event.direction
-        if _handle_pending_approval_wheel(state, event, rerender):
-            return
+    _approval_handle_pending_approval_event(
+        state,
+        pending,
+        event,
+        rerender,
+        approval_event,
+        approval_result,
+        feedback_handler=_handle_feedback_mode_event,
+        capture_mouse=_should_capture_mouse,
+    )
 
 
 def _handle_pending_approval_key(
@@ -4034,44 +3792,7 @@ def _handle_pending_approval_key(
     approval_event: threading.Event,
     approval_result: dict[str, Any],
 ) -> bool:
-    """Handle key events during pending approval. Returns True if handled."""
-    pending = state.pending_approval
-    
-    if event.name == "escape":
-        approval_result.clear()
-        approval_result["decision"] = "deny_once"
-        approval_event.set()
-        rerender()
-        return True
-    
-    if event.name == "return":
-        _confirm_pending_choice(state, rerender, approval_event, approval_result)
-        return True
-    
-    if event.name == "up" and _move_pending_approval_selection(state, -1):
-        rerender()
-        return True
-    
-    if event.name == "down" and _move_pending_approval_selection(state, 1):
-        rerender()
-        return True
-    
-    if event.name == "pageup" and _scroll_pending_approval_by(state, -5):
-        rerender()
-        return True
-    
-    if event.name == "pagedown" and _scroll_pending_approval_by(state, 5):
-        rerender()
-        return True
-    
-    # Digit keys for choices
-    choices = pending.request.get("choices", [])
-    for choice in choices:
-        if event.text == choice.get("key"):
-            _select_pending_choice(state, choice, rerender, approval_event, approval_result)
-            return True
-    
-    return False
+    return _approval_handle_pending_approval_key(state, event, rerender, approval_event, approval_result)
 
 
 def _handle_pending_approval_text(
@@ -4081,21 +3802,7 @@ def _handle_pending_approval_text(
     approval_event: threading.Event,
     approval_result: dict[str, Any],
 ) -> bool:
-    """Handle text events during pending approval. Returns True if handled."""
-    pending = state.pending_approval
-    
-    if event.text == "v" and _toggle_pending_approval_expand(state):
-        rerender()
-        return True
-    
-    # Check digit keys for choices
-    choices = pending.request.get("choices", [])
-    for choice in choices:
-        if event.text == choice.get("key"):
-            _select_pending_choice(state, choice, rerender, approval_event, approval_result)
-            return True
-    
-    return False
+    return _approval_handle_pending_approval_text(state, event, rerender, approval_event, approval_result)
 
 
 def _handle_pending_approval_wheel(
@@ -4103,14 +3810,12 @@ def _handle_pending_approval_wheel(
     event: WheelEvent,
     rerender: Callable[[], None],
 ) -> bool:
-    """Handle wheel events during pending approval for scrolling. Returns True if handled."""
-    if not _should_capture_mouse():
-        return False
-    delta = 3 if event.direction == "up" else -3
-    if _scroll_pending_approval_by(state, delta):
-        rerender()
-        return True
-    return False
+    return _approval_handle_pending_approval_wheel(
+        state,
+        event,
+        rerender,
+        capture_mouse=_should_capture_mouse,
+    )
 
 
 
@@ -4120,18 +3825,7 @@ def _confirm_pending_choice(
     approval_event: threading.Event,
     approval_result: dict[str, Any],
 ) -> None:
-    """Confirm the selected permission choice."""
-    pending = state.pending_approval
-    choices = pending.request.get("choices", [])
-    
-    if choices and 0 <= pending.selected_choice_index < len(choices):
-        choice = choices[pending.selected_choice_index]
-        _select_pending_choice(state, choice, rerender, approval_event, approval_result)
-    else:
-        approval_result.clear()
-        approval_result["decision"] = "allow_once"
-        approval_event.set()
-        rerender()
+    _approval_confirm_pending_choice(state, rerender, approval_event, approval_result)
 
 
 def _select_pending_choice(
@@ -4141,20 +3835,7 @@ def _select_pending_choice(
     approval_event: threading.Event,
     approval_result: dict[str, Any],
 ) -> None:
-    """Select a permission choice and resolve."""
-    pending = state.pending_approval
-    decision = choice.get("decision", "allow_once")
-    
-    if decision == "deny_with_feedback":
-        pending.feedback_mode = True
-        pending.feedback_input = ""
-        rerender()
-        return
-    
-    approval_result.clear()
-    approval_result["decision"] = decision
-    approval_event.set()
-    rerender()
+    _approval_select_pending_choice(state, choice, rerender, approval_event, approval_result)
 
 
 # ---------------------------------------------------------------------------
@@ -4537,40 +4218,11 @@ def _apply_tool_result_visual_state(
     output: str,
     is_error: bool,
 ) -> None:
-    """Apply tool result visual state to a transcript entry."""
-    entry.status = "error" if is_error else "success"
-    entry.body = f"ERROR: {output}" if is_error else output
-    if is_error:
-        entry.collapsed = False
-        entry.collapsedSummary = None
-        entry.collapsePhase = None
-    else:
-        entry.collapsed = True
-        entry.collapsedSummary = _summarize_collapsed_tool_body(output)
-        entry.collapsePhase = 3
+    _progress_apply_tool_result_visual_state(entry, tool_name, output, is_error)
 
 
 def _mark_unfinished_tools(state_obj: Any) -> int:
-    """Mark running tool entries as errors and clean up state. Returns count of affected entries."""
-    count = 0
-    for entry in state_obj.transcript:
-        if entry.kind == "tool" and entry.status == "running":
-            entry.status = "error"
-            entry.body = (
-                f"{entry.body}\n\n"
-                "ERROR: Tool did not report a final result before the turn ended. "
-                "This usually means the command kept running in the background "
-                "or the tool lifecycle got out of sync."
-            )
-            entry.collapsed = False
-            entry.collapsedSummary = None
-            entry.collapsePhase = None
-            state_obj.recent_tools.append({"name": entry.toolName or "unknown", "status": "error"})
-            count += 1
-    if hasattr(state_obj, "pending_tool_runs"):
-        state_obj.pending_tool_runs = {}
-    state_obj.active_tool = None
-    return count
+    return _progress_mark_unfinished_tools(state_obj)
 
 
 def _handle_feedback_mode_event(
