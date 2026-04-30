@@ -28,8 +28,18 @@ def run_pipe_inputs(
     controller: RuntimeController,
 ) -> list[dict[str, str]]:
     messages = controller.messages
-    for raw_input in input_stream:
-        user_input = normalize_cli_input(raw_input)
+    raw_text = "".join(input_stream)
+    normalized_lines = [normalize_cli_input(line) for line in raw_text.splitlines()]
+    nonempty_lines = [line for line in normalized_lines if line]
+    if not nonempty_lines:
+        return messages
+
+    if all(line.startswith("/") for line in nonempty_lines):
+        inputs = nonempty_lines
+    else:
+        inputs = [normalize_cli_input(raw_text)]
+
+    for user_input in inputs:
         if not user_input:
             continue
         next_messages = controller.handle_user_input(user_input)
