@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Callable
 import subprocess
@@ -8,6 +8,17 @@ from astrid.ui.common.frontend import FrontendRuntime
 from astrid.ui.common.text_input import normalize_cli_input
 from astrid.ui.common.welcome import render_startup_welcome
 from astrid.ui.inline.bottom_pane import InlineInputBuffer
+from astrid.ui.inline.rendering import (
+    render_assistant_message,
+    render_permission_panel,
+    render_paste_preview,
+    render_mode_line,
+    render_prompt,
+    render_status_line,
+    render_tool_result,
+    render_tool_start,
+    render_warning_line,
+)
 from astrid.runtime.controller import RuntimeTurnCallbacks, append_transcript
 
 
@@ -16,25 +27,13 @@ def render_inline_intro(runtime: FrontendRuntime) -> str:
     mode = next((line for line in summary if line.startswith("permission mode:")), "permission mode: default")
     warning = ""
     if "bypassPermissions" in mode:
-        warning = "\nWARNING: bypassPermissions is high risk and bypasses Astrid policy prompts."
+        warning = "\n" + render_warning_line("WARNING: bypassPermissions is high risk and bypasses Astrid policy prompts.")
     welcome = render_startup_welcome(cwd=runtime.cwd, controller=runtime.controller, mode="inline")
-    return f"{welcome}\n{mode}{warning}\n"
+    return f"{welcome}\n{render_mode_line(mode, high_risk='bypassPermissions' in mode)}{warning}\n"
 
 
 def render_inline_permission_prompt(request: dict) -> str:
-    lines = ["", "Action Required", str(request.get("summary") or "Permission request")]
-    details = request.get("details") or []
-    for detail in details[:3]:
-        text = str(detail).rstrip()
-        if text:
-            lines.append(f"  {text}")
-    lines.append("Use number keys, Enter for default, or Esc/5 to reject.")
-    for index, choice in enumerate(request.get("choices", [])):
-        key = choice.get("key", str(index + 1))
-        label = choice.get("label", "")
-        marker = ">" if index == 0 else " "
-        lines.append(f" {marker} {key} {label}")
-    return "\n".join(lines)
+    return render_permission_panel(request)
 
 
 class InlineTuiFrontend:
@@ -64,7 +63,7 @@ class InlineTuiFrontend:
         try:
             while True:
                 try:
-                    raw_input = read_input("astrid> ")
+                    raw_input = read_input(render_prompt())
                 except EOFError:
                     break
                 user_input = normalize_cli_input(raw_input)
@@ -72,7 +71,7 @@ class InlineTuiFrontend:
                     continue
                 if "\n" in user_input:
                     line_count = user_input.count("\n") + 1
-                    print(f"[Pasted text #1 +{line_count - 1} lines]")
+                    print(render_paste_preview(1, line_count - 1))
                 next_messages = runtime.controller.handle_user_input(
                     user_input,
                     callbacks=self._make_turn_callbacks(runtime),
@@ -121,11 +120,11 @@ class InlineTuiFrontend:
         def _assistant(content: str) -> None:
             _finish_status()
             append_transcript(runtime.transcript, kind="assistant", body=content)
-            print(f"assistant\n{content}\n")
+            print(render_assistant_message(content))
 
         def _progress(content: str) -> None:
             append_transcript(runtime.transcript, kind="progress", body=content)
-            _rewrite_status(f"• {content}")
+            _rewrite_status(render_status_line(content))
 
         def _tool_start(tool_name: str, input_data: dict) -> None:
             append_transcript(
@@ -135,7 +134,7 @@ class InlineTuiFrontend:
                 toolName=tool_name,
                 status="running",
             )
-            _rewrite_status(f"• running {tool_name}")
+            _rewrite_status(render_tool_start(tool_name))
 
         def _tool_result(tool_name: str, output: str, is_error: bool) -> None:
             _finish_status()
@@ -147,8 +146,7 @@ class InlineTuiFrontend:
                 toolName=tool_name,
                 status=status,
             )
-            preview = output.strip().splitlines()[0] if output.strip() else status
-            print(f"tool {tool_name} · {status}\n  {preview[:180]}\n")
+            print(render_tool_result(tool_name, output, is_error))
 
         return RuntimeTurnCallbacks(
             on_assistant_message=_assistant,

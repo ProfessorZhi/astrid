@@ -94,6 +94,7 @@
 ## 2026-05-01 交付列车进度
 
 - 已完成：默认 inline TUI 恢复共享 welcome pet；inline 权限请求显示数字选择面板；inline progress/tool status 通过回调节流到当前状态行，避免重复刷 prompt。
+- 已完成：inline TUI 第一轮视觉打磨，新增 inline 专用多色渲染层，区分 prompt、assistant、status、tool、success/error、permission，并修复 inline 状态符号乱码。
 - 已完成：full TUI 开始物理拆分，已抽出 `ui/full/renderer.py`、`input_box.py`、`viewport.py`、`status.py`、`writer.py`、`state.py`、`tool_progress.py`、`approval.py`；`tty_app.py` 仍是 orchestrator，后续继续缩小。
 - 已完成：权限第二阶段的最小 policy-only 增强，新增 `ASTRID_WORKSPACE_ALLOWLIST`，并继续在 `eval-workspace` 中拒绝危险命令。
 - 已完成：评测 harness 增加 acceptance 执行、`metrics.json`、transcript 字节数、轮次、源码行数/字节数、`token_usage: 未采集` 等成本代理。

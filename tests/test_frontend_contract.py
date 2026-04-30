@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import re
+
 from astrid.ui.common.frontend import FrontendRuntime
 from astrid.ui.inline import app as inline_app
 from astrid.ui.inline.app import InlineTuiFrontend
 from astrid.ui.inline.app import render_inline_intro, render_inline_permission_prompt
 from astrid.ui.inline.bottom_pane import InlineInputBuffer
+from astrid.ui.inline.rendering import render_prompt, render_status_line, render_tool_result
 from astrid.ui.shell.repl import ShellFrontend
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 class _DummyController:
@@ -94,13 +104,26 @@ def test_inline_permission_prompt_lists_numeric_choices() -> None:
     assert "5 reject once" in rendered
 
 
+def test_inline_rendering_uses_colored_prompt_and_clean_status_text() -> None:
+    assert _plain(render_prompt()) == "astrid> "
+    assert "\x1b[" in render_prompt()
+
+    status = render_status_line("Planning the next step")
+    assert _plain(status) == "status Planning the next step"
+    assert "鈥" not in status
+
+    tool = render_tool_result("write_file", "ok\nmore", is_error=False)
+    assert _plain(tool).startswith("tool write_file success")
+    assert "路" not in tool
+
+
 def test_inline_input_buffer_compresses_multiline_paste_for_display() -> None:
     buffer = InlineInputBuffer()
 
     buffer.insert_paste("line1\nline2\nline3")
 
     assert buffer.value == "line1\nline2\nline3"
-    assert buffer.display_text == "[Pasted text #1 +2 lines]"
+    assert _plain(buffer.display_text) == "[Pasted text #1 +2 lines]"
 
 
 def test_inline_input_buffer_backspace_removes_paste_block() -> None:
@@ -120,7 +143,7 @@ def test_inline_input_buffer_keeps_text_after_paste_editable() -> None:
     buffer.insert_text(" suffix")
 
     assert buffer.value == "line1\nline2 suffix"
-    assert buffer.display_text == "[Pasted text #1 +1 lines] suffix"
+    assert _plain(buffer.display_text) == "[Pasted text #1 +1 lines] suffix"
 
 
 def test_inline_windows_reader_uses_ctrl_v_clipboard(monkeypatch) -> None:

@@ -296,10 +296,10 @@ astrid-py
 
 ## 🎯 Core Features
 
-- **🖥️ Rich Terminal UI** — Alternate-screen TUI with panels, ANSI styling, smooth scrolling
+- **🖥️ Multi-frontend Terminal UI** — Default inline TUI with native scrollback and selection, `--shell` fallback, and experimental `--tui` full-screen UI
 - **🤖 Intelligent Agent Loop** — Multi-turn tool use, auto-plan/execute/iterate
 - **🛠️ 30+ Built-in Tools** — File I/O, code search, shell, git, testing, and more
-- **🔒 Permission System** — Approve, deny, auto-allow tool calls
+- **🔒 Permission System** — Four permission modes, workspace allowlist, dangerous-command confirmation; currently policy-only, not an OS sandbox
 - **💾 Session Persistence** — Save & resume conversations, 30s autosave
 - **🧠 3-Tier Memory** — Conversation → Session → Long-term memory
 - **🔌 MCP Integration** — Connect external Model Context Protocol servers

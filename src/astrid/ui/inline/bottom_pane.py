@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from astrid.ui.inline.rendering import render_paste_preview
+
 
 @dataclass(slots=True)
 class _Segment:
@@ -46,7 +48,7 @@ class InlineInputBuffer:
         self._paste_count += 1
         line_count = normalized.count("\n") + 1
         if line_count > 1:
-            display = f"[Pasted text #{self._paste_count} +{line_count - 1} lines]"
+            display = render_paste_preview(self._paste_count, line_count - 1)
         else:
             display = None
         self._segments.append(_Segment(text=normalized, display=display))
