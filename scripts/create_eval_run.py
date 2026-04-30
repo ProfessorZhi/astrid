@@ -92,6 +92,17 @@ def _transcript_metrics(run_dir: Path) -> dict[str, int | str]:
     }
 
 
+def _default_model_check(platform: str) -> str:
+    normalized = platform.strip().lower()
+    if normalized == "astrid":
+        return "启动 `astrid` 后先运行 `/model` 或 `/status`，以输出中的 current model/model 为准。"
+    if normalized == "claudecode":
+        return "启动 `claude` 后先查看启动页显示的 model；如果本地 Claude Code 支持 `/model`，优先运行 `/model` 确认。"
+    if normalized.startswith("codex"):
+        return "记录 Codex 客户端/CLI 顶部或启动信息中的模型名称；不要把主持会话模型误写成被测 agent 模型。"
+    return "启动被测 agent 后先用其模型查询命令或启动页显示确认当前模型。"
+
+
 def write_run_metrics(run_dir: Path, *, started_at: float | None = None, ended_at: float | None = None) -> Path:
     started = started_at or time.time()
     ended = ended_at or time.time()
@@ -234,7 +245,14 @@ def create_run(
     platform: str,
     model: str,
     run_name: str,
+    model_confirmed: bool = True,
+    model_source: str | None = None,
 ) -> RunResult:
+    if not model_confirmed:
+        raise ValueError(
+            "model must be confirmed before creating a run. "
+            "Astrid: use /model or /status. Claude Code: use /model if available or record the startup model line."
+        )
     root = Path(verification_root)
     suite_dir = root / "suites" / suite
     run_dir = root / "runs" / platform / model / run_name
@@ -253,6 +271,19 @@ def create_run(
     )
     _write_new_file(run_dir / "prompts" / "round-01.md", prompt_text)
 
+    model_check = model_source or _default_model_check(platform)
+    _write_new_file(
+        run_dir / "model-check.md",
+        f"""# 模型确认
+
+- platform: `{platform}`
+- recorded model folder: `{model}`
+- confirmation: {model_check}
+
+建 run 目录前必须先确认模型。目录里的 `<model>` 层必须写实际被测 agent 当前模型，不要沿用上一次评测的旧模型名。
+""",
+    )
+
     _write_new_file(
         run_dir / "instructions.md",
         f"""# 执行说明
@@ -262,6 +293,7 @@ def create_run(
 - suite: `{suite}`
 - platform: `{platform}`
 - model: `{model}`
+- model confirmation: {model_check}
 - run: `{run_name}`
 - workspace: `{workspace_dir}`
 
@@ -269,9 +301,11 @@ def create_run(
 
 1. 在 Codex 桌面内置终端进入 `workspace/`。
 2. 启动被测 agent，例如 `astrid`、`claude` 或 suite 指定命令。
-3. 将 `prompts/round-01.md` 原文粘贴给被测 agent。
-4. 完成后保存 transcript 到 `transcripts/round-01.txt`。
-5. 在 agent 外部运行 suite 的验收命令，把输出保存到 `acceptance/`。
+3. 先确认当前模型：{model_check}
+4. 如果实际模型不是 `{model}`，停止本 run，重新用正确 `--model` 创建目录；不要继续把答卷写进错误模型文件夹。
+5. 将 `prompts/round-01.md` 原文粘贴给被测 agent。
+6. 完成后保存 transcript 到 `transcripts/round-01.txt`。
+7. 在 agent 外部运行 suite 的验收命令，把输出保存到 `acceptance/`。
 """,
     )
     _write_new_file(
@@ -375,6 +409,15 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--platform", required=True)
     run_parser.add_argument("--model", required=True)
     run_parser.add_argument("--run-name", required=True)
+    run_parser.add_argument(
+        "--model-confirmed",
+        action="store_true",
+        help="Required for CLI run creation: confirms you checked the live agent model before creating the model folder.",
+    )
+    run_parser.add_argument(
+        "--model-source",
+        help="How the model was confirmed, e.g. 'Astrid /model returned mimo' or 'Claude startup banner showed mimo'.",
+    )
 
     acceptance_parser = subparsers.add_parser("acceptance", help="Run a suite acceptance command for a run.")
     acceptance_parser.add_argument("suite")
@@ -391,12 +434,21 @@ def main(argv: list[str] | None = None) -> int:
         print(result.suite_dir)
         return 0
     if args.command == "run":
+        if not args.model_confirmed:
+            print(
+                "run creation requires --model-confirmed. "
+                "Check Astrid with /model or /status; check Claude Code with /model if available or its startup model line.",
+                flush=True,
+            )
+            return 2
         result = create_run(
             verification_root=args.verification_root,
             suite=args.suite,
             platform=args.platform,
             model=args.model,
             run_name=args.run_name,
+            model_confirmed=args.model_confirmed,
+            model_source=args.model_source,
         )
         print(result.run_dir)
         return 0

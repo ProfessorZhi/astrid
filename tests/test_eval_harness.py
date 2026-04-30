@@ -58,6 +58,8 @@ def test_create_run_copies_seed_workspace_and_writes_run_templates(tmp_path: Pat
     assert (run_dir / "workspace" / "app.py").read_text(encoding="utf-8") == "print('seed')\n"
     assert (run_dir / "prompts" / "round-01.md").read_text(encoding="utf-8") == "Round 01 prompt\n"
     assert "workspace" in (run_dir / "instructions.md").read_text(encoding="utf-8")
+    assert (run_dir / "model-check.md").exists()
+    assert "recorded model folder: `minimax2.7`" in (run_dir / "model-check.md").read_text(encoding="utf-8")
     assert "100" in (run_dir / "evaluation.md").read_text(encoding="utf-8")
     assert (run_dir / "results.md").exists()
     assert (run_dir / "acceptance").is_dir()
@@ -114,3 +116,55 @@ def test_run_acceptance_writes_output_and_metrics(tmp_path: Path) -> None:
     metrics = result.metrics_path.read_text(encoding="utf-8")
     assert '"source_lines"' in metrics
     assert '"token_usage": "未采集"' in metrics
+
+
+def test_cli_run_requires_explicit_model_confirmation(tmp_path: Path) -> None:
+    harness = _load_harness_module()
+    verification_root = tmp_path / "verification"
+    (verification_root / "suites" / "snake" / "seed-workspace").mkdir(parents=True)
+
+    rc = harness.main(
+        [
+            "--verification-root",
+            str(verification_root),
+            "run",
+            "snake",
+            "--platform",
+            "astrid",
+            "--model",
+            "mimo",
+            "--run-name",
+            "2026-05-01-snake",
+        ]
+    )
+
+    assert rc == 2
+    assert not (verification_root / "runs").exists()
+
+
+def test_cli_run_records_model_confirmation_source(tmp_path: Path) -> None:
+    harness = _load_harness_module()
+    verification_root = tmp_path / "verification"
+    (verification_root / "suites" / "snake" / "seed-workspace").mkdir(parents=True)
+
+    rc = harness.main(
+        [
+            "--verification-root",
+            str(verification_root),
+            "run",
+            "snake",
+            "--platform",
+            "astrid",
+            "--model",
+            "mimo",
+            "--run-name",
+            "2026-05-01-snake",
+            "--model-confirmed",
+            "--model-source",
+            "Astrid /model returned mimo",
+        ]
+    )
+
+    assert rc == 0
+    run_dir = verification_root / "runs" / "astrid" / "mimo" / "2026-05-01-snake"
+    assert "Astrid /model returned mimo" in (run_dir / "model-check.md").read_text(encoding="utf-8")
