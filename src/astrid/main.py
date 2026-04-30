@@ -270,6 +270,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session", default=None, metavar="SESSION_ID")
     parser.add_argument("--install", action="store_true", help="Run the interactive installer")
     parser.add_argument("--validate-config", action="store_true", help="Validate configuration and exit")
+    parser.add_argument("--show-model", action="store_true", help="Print the configured runtime model and exit")
     parser.add_argument(
         "--log-level",
         default="WARNING",
@@ -323,6 +324,15 @@ def main() -> None:
         from astrid.runtime.config import format_config_diagnostic
 
         print(format_config_diagnostic())
+        return
+
+    if args.show_model:
+        try:
+            runtime = load_runtime_config(str(Path.cwd()))
+        except Exception as error:  # noqa: BLE001
+            print(f"runtime not configured: {error}")
+            return
+        print(runtime.get("model", "unknown"))
         return
 
     if args.install:

@@ -95,7 +95,7 @@ def _transcript_metrics(run_dir: Path) -> dict[str, int | str]:
 def _default_model_check(platform: str) -> str:
     normalized = platform.strip().lower()
     if normalized == "astrid":
-        return "启动 `astrid` 后先运行 `/model` 或 `/status`，以输出中的 current model/model 为准。"
+        return "优先运行 `astrid --show-model`；已进入 Astrid 会话时运行 `/model` 或 `/status`，以输出中的模型为准。"
     if normalized == "claudecode":
         return "启动 `claude` 后先查看启动页显示的 model；如果本地 Claude Code 支持 `/model`，优先运行 `/model` 确认。"
     if normalized.startswith("codex"):

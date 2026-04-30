@@ -374,6 +374,18 @@ def test_main_tui_flag_disables_shell_mode_on_windows(monkeypatch, tmp_path) -> 
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "1"
 
 
+def test_main_show_model_prints_configured_model(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main_mod, "_configure_stdio", lambda: None)
+    monkeypatch.setattr(main_mod.sys, "argv", ["astrid", "--show-model"])
+    monkeypatch.setattr("astrid.runtime.logging_config.setup_logging", lambda level="WARNING": None)
+    monkeypatch.setattr(main_mod, "load_runtime_config", lambda cwd: {"model": "mimo"})
+
+    main_mod.main()
+
+    assert capsys.readouterr().out.strip() == "mimo"
+
+
 def test_run_shell_repl_prints_intro_and_stops_on_exit(monkeypatch, capsys) -> None:
     history: list[str] = []
     prompts: list[str] = []

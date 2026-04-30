@@ -170,6 +170,7 @@ astrid-py
 - 默认交互入口是 inline 终端体验；`--shell` 是原生 scrollback fallback，`--tui` 是 full-screen TUI。
 - inline 首屏会显示共享 welcome pet；普通 transcript 保留在原生 scrollback，权限请求在当前终端显示数字选择面板。
 - 权限模式已支持四档：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`，可用 `--permission-mode` 或 `ASTRID_PERMISSION_MODE` 选择。`ASTRID_WORKSPACE_ALLOWLIST` 可添加额外工作区根目录。当前 Astrid 是 policy-only sandbox，不提供 OS 级进程或文件系统隔离。
+- 创建评测 run 目录前先运行 `astrid --show-model`。`<model>` 路径层应匹配实际模型 slug；如果使用短别名，必须在 `model-check.md` 记录实际输出。
 - Astrid 会从 git root 到当前目录逐层读取 `AGENTS.md`，越靠近当前目录的指令越具体。
 - skills 默认实体目录是 `F:\funnyskills\astrid-skills`，`C:\Users\Administrator\.astrid\skills` 只是用户入口链接；`ASTRID_SKILLS_ROOT` 可覆盖。
 - memory 状态使用统一目录；测试会通过 `ASTRID_MEMORIES_ROOT` 隔离，不要在仓库根创建新的零散 `.astrid*` 状态目录。
@@ -388,6 +389,7 @@ astrid-py
 
 - The default interactive entrypoint is the inline terminal experience. `--shell` is the native scrollback fallback, and `--tui` is the full-screen TUI.
 - Permission modes are implemented as four tiers: `default`, `accept-edits`, `eval-workspace`, and `bypassPermissions`, selectable with `--permission-mode` or `ASTRID_PERMISSION_MODE`. Astrid is currently a policy-only sandbox, not an OS-level process or filesystem sandbox.
+- Run `astrid --show-model` before creating eval run folders. The model path segment should match the actual configured model slug; if you use a short alias, record the exact output in `model-check.md`.
 - Astrid reads `AGENTS.md` from the git root down to the current working directory, with nearer files taking precedence.
 - Skills use a Codex-style entry/entity split: the default entity root is `F:\funnyskills\astrid-skills`, while `C:\Users\Administrator\.astrid\skills` is only the user entry link. `ASTRID_SKILLS_ROOT` can override it.
 - Memory state should live under the unified memory root; tests isolate it with `ASTRID_MEMORIES_ROOT`. Do not add new ad hoc `.astrid*` state directories at the repository root.

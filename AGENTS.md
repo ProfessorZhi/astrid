@@ -50,7 +50,7 @@
 - 对浏览器类产物，Codex 主持验收时应优先使用 Codex 桌面内置浏览器做辅助验收。小游戏、网页、工具页、仪表盘等都要尽量打开真实页面，模拟人类点击、输入、键盘、鼠标、窗口缩放和截图；但浏览器辅助验收不能完全代替人工评分，尤其是游戏手感、审美、信息架构和产品判断。
 - 横向对比时，Astrid、Claude Code、Codex 必须使用同一组 prompt、同一套初始 workspace、同一套外部验收命令。
 - 所有测试 prompt、初始文件、agent 产物、transcript、pytest/验收输出，都必须保存到对应的 `verification/runs/<agent-platform>/<model>/<run-name>/` 目录。
-- 建任何 `verification/runs/<agent-platform>/<model>/<run-name>/` 目录前，必须先确认被测 agent 当前真实模型，不能沿用上一次评测的旧模型目录名。Astrid 先启动后运行 `/model` 或 `/status`；Claude Code 先看启动页 model 行，如本地版本支持 `/model` 则优先运行 `/model`；Codex 客户端/CLI 记录顶部或启动信息显示的模型。当前如果用户已经切到 mimo，就必须用 `mimo` 作为 `<model>` 层，不要再建到 `minimax2.7`。
+- 建任何 `verification/runs/<agent-platform>/<model>/<run-name>/` 目录前，必须先确认被测 agent 当前真实模型，不能沿用上一次评测的旧模型目录名。Astrid 优先运行 `astrid --show-model`；已进入 Astrid 会话时可运行 `/model` 或 `/status`；Claude Code 先看启动页 model 行，如本地版本支持 `/model` 则优先运行 `/model`；Codex 客户端/CLI 记录顶部或启动信息显示的模型。`<model>` 层优先使用实际输出的模型 slug，例如当前 Astrid `--show-model` 输出 `mimo-v2.5-pro` 时应建到 `mimo-v2.5-pro`；如果用户明确要求用短名 `mimo`，必须在 `model-check.md` 记录 exact output，不要再误建到 `minimax2.7`。
 - 轻量 suite/run 骨架优先用 `python scripts/create_eval_run.py suite <suite>` 和 `python scripts/create_eval_run.py run <suite> --platform <platform> --model <model> --run-name <run> --model-confirmed --model-source "<如何确认模型>"` 创建。该脚本只复制 `seed-workspace/` 并生成 prompts、instructions、evaluation、comparison/results 模板；不要把它当作自动跑 agent 或自动验收工具。CLI 模式下缺少 `--model-confirmed` 必须拒绝创建 run。
 - 评测目录命名要短，并同时包含英文和中文含义：suite 用 `snake-贪吃蛇` 这种名字；agent run 用 `YYYY-MM-DD-snake-贪吃蛇` 这种名字。平台和模型不要揉进 run 名字里，要放在上层目录。
 - 评测材料默认中文优先。suite 里的题目说明、要求、验收标准、首轮 prompt、评分口径必须优先写中文；必要时可以保留英文标题或术语辅助识别。
