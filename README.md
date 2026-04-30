@@ -103,10 +103,10 @@ astrid-py
 
 ## 🎯 核心特性
 
-- **🖥️ 丰富的终端 UI** — 备用屏幕 TUI，面板、ANSI 样式、平滑滚动
+- **🖥️ 多前端终端 UI** — 默认 inline TUI，保留原生 scrollback/选择文本；`--shell` 原生 fallback；`--tui` full-screen 实验界面
 - **🤖 智能代理循环** — 多轮工具使用，自动规划、执行、迭代
 - **🛠️ 30+ 内置工具** — 文件 I/O、代码搜索、Shell、Git、测试等
-- **🔒 权限系统** — 审批、拒绝、自动允许工具调用
+- **🔒 权限系统** — 四档权限模式、workspace allowlist、危险命令确认；当前是 policy-only，不是 OS sandbox
 - **💾 会话持久化** — 保存并恢复对话，30 秒自动保存
 - **🧠 三级记忆** — 对话 → 会话 → 长期记忆
 - **🔌 MCP 集成** — 连接外部模型上下文协议服务器
@@ -168,7 +168,8 @@ astrid-py
 ### 当前运行边界
 
 - 默认交互入口是 inline 终端体验；`--shell` 是原生 scrollback fallback，`--tui` 是 full-screen TUI。
-- 权限模式已支持四档：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`，可用 `--permission-mode` 或 `ASTRID_PERMISSION_MODE` 选择。当前 Astrid 是 policy-only sandbox，不提供 OS 级进程或文件系统隔离。
+- inline 首屏会显示共享 welcome pet；普通 transcript 保留在原生 scrollback，权限请求在当前终端显示数字选择面板。
+- 权限模式已支持四档：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`，可用 `--permission-mode` 或 `ASTRID_PERMISSION_MODE` 选择。`ASTRID_WORKSPACE_ALLOWLIST` 可添加额外工作区根目录。当前 Astrid 是 policy-only sandbox，不提供 OS 级进程或文件系统隔离。
 - Astrid 会从 git root 到当前目录逐层读取 `AGENTS.md`，越靠近当前目录的指令越具体。
 - skills 默认实体目录是 `F:\funnyskills\astrid-skills`，`C:\Users\Administrator\.astrid\skills` 只是用户入口链接；`ASTRID_SKILLS_ROOT` 可覆盖。
 - memory 状态使用统一目录；测试会通过 `ASTRID_MEMORIES_ROOT` 隔离，不要在仓库根创建新的零散 `.astrid*` 状态目录。
@@ -195,9 +196,10 @@ ASTRID_MODEL_MODE=mock python -m astrid.main
 ```bash
 python scripts/create_eval_run.py suite snake-贪吃蛇 --title 贪吃蛇
 python scripts/create_eval_run.py run snake-贪吃蛇 --platform astrid --model minimax2.7 --run-name 2026-05-01-snake-贪吃蛇
+python scripts/create_eval_run.py acceptance snake-贪吃蛇 --run-dir verification/runs/astrid/minimax2.7/2026-05-01-snake-贪吃蛇
 ```
 
-该脚本只创建 `verification/suites/...` 和 `verification/runs/...` 骨架、复制 `seed-workspace/`、生成 prompt/instructions/evaluation/comparison 模板；不会替被测 agent 写代码或自动喂 prompt。
+该脚本创建 `verification/suites/...` 和 `verification/runs/...` 骨架、复制 `seed-workspace/`、生成 prompt/instructions/evaluation/comparison 模板，并能执行 suite acceptance 命令、写入 `acceptance/acceptance-output.txt` 和 `metrics.json`。它不会替被测 agent 写代码或自动喂 prompt。
 
 ---
 

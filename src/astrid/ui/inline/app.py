@@ -6,7 +6,9 @@ import sys
 
 from astrid.ui.common.frontend import FrontendRuntime
 from astrid.ui.common.text_input import normalize_cli_input
+from astrid.ui.common.welcome import render_startup_welcome
 from astrid.ui.inline.bottom_pane import InlineInputBuffer
+from astrid.runtime.controller import RuntimeTurnCallbacks, append_transcript
 
 
 def render_inline_intro(runtime: FrontendRuntime) -> str:
@@ -15,11 +17,24 @@ def render_inline_intro(runtime: FrontendRuntime) -> str:
     warning = ""
     if "bypassPermissions" in mode:
         warning = "\nWARNING: bypassPermissions is high risk and bypasses Astrid policy prompts."
-    return (
-        "Astrid inline TUI\n"
-        "Native scrollback stays available. Use --shell for plain fallback or --tui for full-screen UI.\n"
-        f"{mode}{warning}\n"
-    )
+    welcome = render_startup_welcome(cwd=runtime.cwd, controller=runtime.controller, mode="inline")
+    return f"{welcome}\n{mode}{warning}\n"
+
+
+def render_inline_permission_prompt(request: dict) -> str:
+    lines = ["", "Action Required", str(request.get("summary") or "Permission request")]
+    details = request.get("details") or []
+    for detail in details[:3]:
+        text = str(detail).rstrip()
+        if text:
+            lines.append(f"  {text}")
+    lines.append("Use number keys, Enter for default, or Esc/5 to reject.")
+    for index, choice in enumerate(request.get("choices", [])):
+        key = choice.get("key", str(index + 1))
+        label = choice.get("label", "")
+        marker = ">" if index == 0 else " "
+        lines.append(f" {marker} {key} {label}")
+    return "\n".join(lines)
 
 
 class InlineTuiFrontend:
@@ -43,23 +58,104 @@ class InlineTuiFrontend:
     def run(self, runtime: FrontendRuntime) -> list[dict[str, str]] | None:
         print(self.intro if self.intro is not None else render_inline_intro(runtime))
         read_input = self.input_reader or read_inline_input
+        original_prompt = getattr(runtime.controller.permissions, "prompt", None)
+        runtime.controller.permissions.prompt = self._make_permission_prompt(read_input)
         messages = runtime.controller.messages
-        while True:
-            try:
-                raw_input = read_input("astrid> ")
-            except EOFError:
-                break
-            user_input = normalize_cli_input(raw_input)
-            if not user_input:
-                continue
-            if "\n" in user_input:
-                line_count = user_input.count("\n") + 1
-                print(f"[Pasted text #1 +{line_count - 1} lines]")
-            next_messages = runtime.controller.handle_user_input(user_input)
-            if next_messages is None:
-                break
-            messages = next_messages
+        try:
+            while True:
+                try:
+                    raw_input = read_input("astrid> ")
+                except EOFError:
+                    break
+                user_input = normalize_cli_input(raw_input)
+                if not user_input:
+                    continue
+                if "\n" in user_input:
+                    line_count = user_input.count("\n") + 1
+                    print(f"[Pasted text #1 +{line_count - 1} lines]")
+                next_messages = runtime.controller.handle_user_input(
+                    user_input,
+                    callbacks=self._make_turn_callbacks(runtime),
+                )
+                if next_messages is None:
+                    break
+                messages = next_messages
+        finally:
+            runtime.controller.permissions.prompt = original_prompt
         return messages
+
+    def _make_permission_prompt(self, read_input: Callable[[str], str]) -> Callable[[dict], dict]:
+        def _prompt(request: dict) -> dict:
+            print(render_inline_permission_prompt(request))
+            choices = request.get("choices", [])
+            default = choices[0] if choices else {"decision": "allow_once"}
+            try:
+                answer = read_input("approval> ").strip()
+            except EOFError:
+                return {"decision": "deny_once"}
+            if answer in {"", "\r", "\n"}:
+                return {"decision": default.get("decision", "allow_once")}
+            if answer == "\x1b":
+                return {"decision": "deny_once"}
+            for choice in choices:
+                if answer == str(choice.get("key", "")):
+                    return {"decision": choice.get("decision", "allow_once")}
+            return {"decision": "deny_once"}
+
+        return _prompt
+
+    def _make_turn_callbacks(self, runtime: FrontendRuntime) -> RuntimeTurnCallbacks:
+        progress_state = {"last": ""}
+
+        def _rewrite_status(text: str) -> None:
+            progress_state["last"] = text
+            sys.stdout.write("\r\x1b[2K" + text)
+            sys.stdout.flush()
+
+        def _finish_status() -> None:
+            if progress_state["last"]:
+                sys.stdout.write("\r\x1b[2K")
+                sys.stdout.flush()
+                progress_state["last"] = ""
+
+        def _assistant(content: str) -> None:
+            _finish_status()
+            append_transcript(runtime.transcript, kind="assistant", body=content)
+            print(f"assistant\n{content}\n")
+
+        def _progress(content: str) -> None:
+            append_transcript(runtime.transcript, kind="progress", body=content)
+            _rewrite_status(f"• {content}")
+
+        def _tool_start(tool_name: str, input_data: dict) -> None:
+            append_transcript(
+                runtime.transcript,
+                kind="tool",
+                body=f"input: {input_data}",
+                toolName=tool_name,
+                status="running",
+            )
+            _rewrite_status(f"• running {tool_name}")
+
+        def _tool_result(tool_name: str, output: str, is_error: bool) -> None:
+            _finish_status()
+            status = "error" if is_error else "success"
+            append_transcript(
+                runtime.transcript,
+                kind="tool",
+                body=output,
+                toolName=tool_name,
+                status=status,
+            )
+            preview = output.strip().splitlines()[0] if output.strip() else status
+            print(f"tool {tool_name} · {status}\n  {preview[:180]}\n")
+
+        return RuntimeTurnCallbacks(
+            on_assistant_message=_assistant,
+            on_progress_message=_progress,
+            on_tool_start=_tool_start,
+            on_tool_result=_tool_result,
+        )
 
 
 def _read_clipboard_text() -> str:

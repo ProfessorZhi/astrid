@@ -91,6 +91,16 @@
 
 后续不要平均用力，优先做能被真实评测验证的功能。
 
+## 2026-05-01 交付列车进度
+
+- 已完成：默认 inline TUI 恢复共享 welcome pet；inline 权限请求显示数字选择面板；inline progress/tool status 通过回调节流到当前状态行，避免重复刷 prompt。
+- 已完成：full TUI 开始物理拆分，已抽出 `ui/full/renderer.py`、`input_box.py`、`viewport.py`、`status.py`、`writer.py`；`tty_app.py` 仍是 orchestrator，后续继续缩小。
+- 已完成：权限第二阶段的最小 policy-only 增强，新增 `ASTRID_WORKSPACE_ALLOWLIST`，并继续在 `eval-workspace` 中拒绝危险命令。
+- 已完成：评测 harness 增加 acceptance 执行、`metrics.json`、transcript 字节数、轮次、源码行数/字节数、`token_usage: 未采集` 等成本代理。
+- 已完成：CLI smoke 显式用 UTF-8 捕获输出，避免 Windows GBK reader warning；新增中文/长会话相关回归。
+- 已完成：系统 prompt 强化 coding loop：先读测试、改代码、运行聚焦测试、失败继续修，不能把失败测试当完成。
+- 仍剩：full TUI 多 agent worker 编排和结果合成还未收进 runtime/controller；inline 还不是完整 Codex Rust TUI 级别的 rich bottom pane；Astrid 仍是 policy-only，不是 OS sandbox。
+
 ## Astrid 近期重点
 
 近期进入项目结构正规化阶段。第一、二阶段已经先在包内理清 runtime 和 UI 前端边界；第三阶段采用标准 `src/astrid` 布局，避免根目录源码包和测试/临时状态混在一起。
@@ -125,13 +135,13 @@
    - 后续剩余：补更多真实 TTY 文案 smoke、把命令 allowlist 做得更细、探索 Windows 下可落地的 OS 级隔离。不要把当前 policy-only 模式说成 Codex 级 sandbox。
 
 2. **自动化测试 / eval harness 产品化**
-   - 已实现：`scripts/create_eval_run.py` 提供轻量 suite/run 骨架创建，复制 seed workspace，并生成 prompt/instructions/evaluation/results/comparison 模板；测试覆盖在 `tests/test_eval_harness.py`。
-   - 仍剩：保存 transcript/acceptance 的一键辅助、生成横向 comparison 表的数据填充、非 TTY / eval-workspace 的自动化执行能力。
+   - 已实现：`scripts/create_eval_run.py` 提供轻量 suite/run 骨架创建，复制 seed workspace，生成 prompt/instructions/evaluation/results/comparison 模板，并能执行 suite acceptance、写入 acceptance 输出和 `metrics.json`。
+   - 仍剩：真实终端 transcript 自动采集、横向 comparison 表的数据填充、非 TTY / eval-workspace 的自动化执行能力。
    - 同时补上非 TTY / eval-workspace 的自动化执行能力；不要把非 TTY 自动跑混成默认真实终端评测。
 
 3. **TUI 重构**
-   - 当前 `tty_app.py` 边界不清，不能继续在 shell/native、inline TUI、full-screen TUI 之间混补。
-   - 先对照 Codex inline viewport/bottom pane 和 Claude Code Ink/PromptInput，再拆 renderer、input box、transcript viewport、status/progress、terminal writer。
+   - 当前 `tty_app.py` 已开始拆分到 renderer、input box、transcript viewport、status/progress、terminal writer，但还不是 thin orchestrator。
+   - 继续对照 Codex inline viewport/bottom pane 和 Claude Code Ink/PromptInput，优先保持默认 inline 可滚动、可复制、权限面板清楚。
    - 目标是最终拥有稳定 controlled TUI；在此之前默认终端体验必须保持可用、可滚动、可复制。
 
 1. **真实 coding-agent eval harness**
@@ -147,17 +157,20 @@
 3. **TUI runtime 拆分**
    - 目标：降低 `tty_app.py` 复杂度，继续接近 Codex/Claude Code 的组件化 TUI runtime。
    - 已完成：`tty_app.py` 已移动到 `src/astrid/ui/full/tty_app.py`；普通 full TUI 模型回合已改为调用 `RuntimeController.execute_agent_turn(...)`，不再直接调用 `run_agent_turn`；多 agent 分支的 permission turn 已改为通过 `RuntimeController` 包装。
-   - 要做：拆出 renderer、input box、status/progress、transcript viewport、screen writer；继续把 full TUI 的多 agent worker 编排、结果合成和 permission presenter 抽成 runtime-owned flow + UI callback。
+   - 已完成：第一批拆出 renderer、input box、status/progress、transcript viewport、screen writer 模块。
+   - 要做：继续把 `tty_app.py` 缩成 thin orchestrator；继续把 full TUI 的多 agent worker 编排、结果合成和 permission presenter 抽成 runtime-owned flow + UI callback。
    - 验收：现有 TUI 测试全绿；长 transcript 下普通输入不触发全量 transcript render；prompt/footer 仍 pinned-bottom。
 
 4. **中文输出编码修复**
    - 目标：修复真实模型 transcript 中中文 assistant 输出 mojibake 的问题。
    - 要做：定位是模型响应解码、stdout encoding、PowerShell 捕获、还是 transcript 写入链路导致。
-   - 验收：中文 prompt 后 stdout 和 transcript 都保留正常中文；新增 Windows 编码回归测试。
+   - 已完成：CLI smoke 子进程显式以 UTF-8 捕获 stdout/stderr，避免 Windows GBK reader warning。
+   - 验收：中文 prompt 后 stdout 和 transcript 都保留正常中文；后续还要用真实模型 transcript 做手动验证。
 
 5. **测试驱动的 agent loop**
    - 目标：让 Astrid 更像 coding agent，而不是只按 prompt 修改一次文件。
-   - 要做：在模型策略和工具提示中强化“先读测试、改代码、运行测试、根据失败继续修”的闭环。
+   - 已完成：系统 prompt 已强化“先读测试、改代码、运行测试、根据失败继续修”的闭环。
+   - 要做：继续用真实 coding eval 验证是否降低多轮修复和 max tool steps 概率。
    - 验收：真实 eval 中需要二轮修复的任务比例下降；失败时 transcript 能清楚显示测试失败和修复依据。
 
 6. **多 Agent 执行产品化**
@@ -167,7 +180,8 @@
 
 7. **Context / Memory 长会话评测**
    - 目标：验证长会话、compact、resume 后仍保留当前任务和关键工具结果。
-   - 要做：构造长 transcript、本地 resume、compact 前后继续同一 coding task。
+   - 已完成：新增 compact 后保存 session、resume 后仍保留最新约束和失败测试的单元测试。
+   - 要做：构造真实长 transcript、本地 resume、compact 前后继续同一 coding task 的手动/半自动实测。
    - 验收：compact/resume 后能继续完成任务；不会忘记目标文件、失败测试和用户最新约束。
 
 8. **权限 / 沙箱第二阶段**

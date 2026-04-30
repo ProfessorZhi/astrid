@@ -3,6 +3,7 @@ from __future__ import annotations
 from astrid.ui.common.frontend import FrontendRuntime
 from astrid.ui.inline import app as inline_app
 from astrid.ui.inline.app import InlineTuiFrontend
+from astrid.ui.inline.app import render_inline_intro, render_inline_permission_prompt
 from astrid.ui.inline.bottom_pane import InlineInputBuffer
 from astrid.ui.shell.repl import ShellFrontend
 
@@ -12,7 +13,7 @@ class _DummyController:
         self.messages: list[dict[str, str]] = []
         self.inputs: list[str] = []
 
-    def handle_user_input(self, user_input: str):
+    def handle_user_input(self, user_input: str, **_kwargs):
         self.inputs.append(user_input)
         if user_input == "/exit":
             return None
@@ -61,6 +62,36 @@ def test_inline_frontend_delegates_turns_to_runtime_controller() -> None:
 
     assert result == []
     assert controller.inputs == ["hello\nworld", "/exit"]
+
+
+def test_inline_intro_renders_shared_welcome_pet(monkeypatch) -> None:
+    controller = _DummyController()
+    runtime = FrontendRuntime(cwd=".", controller=controller, transcript=[])  # type: ignore[arg-type]
+    monkeypatch.setattr("astrid.ui.common.pet.load_pet_settings", lambda: {"companionSpecies": "robot"})
+
+    intro = render_inline_intro(runtime)
+
+    assert "Welcome back" in intro
+    assert "Robot" in intro
+    assert "permission mode: default" in intro
+
+
+def test_inline_permission_prompt_lists_numeric_choices() -> None:
+    rendered = render_inline_permission_prompt(
+        {
+            "summary": "astrid wants to apply a file modification",
+            "details": ["target: demo.py"],
+            "choices": [
+                {"key": "1", "label": "apply once", "decision": "allow_once"},
+                {"key": "5", "label": "reject once", "decision": "deny_once"},
+            ],
+        }
+    )
+
+    assert "Action Required" in rendered
+    assert "target: demo.py" in rendered
+    assert "1 apply once" in rendered
+    assert "5 reject once" in rendered
 
 
 def test_inline_input_buffer_compresses_multiline_paste_for_display() -> None:

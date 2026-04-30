@@ -98,6 +98,8 @@ def build_system_prompt(
         f"Current cwd: {cwd}",
         "You can inspect or modify paths outside the current cwd when the user asks, but tool permissions may pause for approval first.",
         "When making code changes, keep them minimal, practical, and working-oriented.",
+        "For coding tasks, follow the verification loop: inspect relevant files and tests first, make the smallest useful change, run the focused test or command, and continue fixing if the command fails. Do not report completion while a relevant test is still failing.",
+        "If you reach a tool-step or time limit, summarize the last failing command, touched files, and the exact next verification step instead of implying the task is complete.",
         "If the user clearly asked you to build, modify, optimize, or generate something, do the work instead of stopping at a plan.",
         "If you need user clarification, call the ask_user tool with one concise question and wait for the user reply. Do not ask clarifying questions as plain assistant text.",
         "Do not choose subjective preferences such as colors, visual style, copy tone, or naming unless the user explicitly told you to decide yourself.",

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
+import subprocess
+import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -17,6 +20,12 @@ class RunResult(NamedTuple):
     run_dir: Path
 
 
+class AcceptanceResult(NamedTuple):
+    output_path: Path
+    metrics_path: Path
+    returncode: int
+
+
 def _write_new_file(path: Path, content: str) -> None:
     if path.exists():
         return
@@ -30,6 +39,72 @@ def _copy_seed_workspace(source: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     if source.is_dir():
         shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
+def _extract_acceptance_command(acceptance_path: Path) -> str | None:
+    if not acceptance_path.exists():
+        return None
+    text = acceptance_path.read_text(encoding="utf-8")
+    in_block = False
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if line.startswith("```"):
+            if in_block:
+                break
+            in_block = line.lower() in {"```bash", "```sh", "```powershell", "```ps1", "```"}
+            continue
+        if in_block:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("TODO:"):
+                lines.append(line)
+    command = "\n".join(lines).strip()
+    return command or None
+
+
+def _count_source_metrics(workspace_dir: Path) -> dict[str, int]:
+    extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".css", ".md", ".json"}
+    files = 0
+    lines = 0
+    bytes_count = 0
+    if not workspace_dir.exists():
+        return {"source_files": 0, "source_lines": 0, "source_bytes": 0}
+    for path in workspace_dir.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in extensions:
+            continue
+        if any(part in {"node_modules", ".git", "__pycache__", ".pytest_cache"} for part in path.parts):
+            continue
+        files += 1
+        data = path.read_bytes()
+        bytes_count += len(data)
+        lines += data.decode("utf-8", errors="replace").count("\n") + (1 if data else 0)
+    return {"source_files": files, "source_lines": lines, "source_bytes": bytes_count}
+
+
+def _transcript_metrics(run_dir: Path) -> dict[str, int | str]:
+    transcript_dir = run_dir / "transcripts"
+    files = sorted(transcript_dir.glob("*.txt")) if transcript_dir.exists() else []
+    return {
+        "rounds": len(list((run_dir / "prompts").glob("round-*.md"))) if (run_dir / "prompts").exists() else 0,
+        "transcript_files": len(files),
+        "transcript_bytes": sum(path.stat().st_size for path in files),
+        "token_usage": "未采集",
+    }
+
+
+def write_run_metrics(run_dir: Path, *, started_at: float | None = None, ended_at: float | None = None) -> Path:
+    started = started_at or time.time()
+    ended = ended_at or time.time()
+    metrics = {
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(started)),
+        "ended_at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(ended)),
+        "duration_seconds": round(max(0.0, ended - started), 3),
+        **_transcript_metrics(run_dir),
+        **_count_source_metrics(run_dir / "workspace"),
+    }
+    path = run_dir / "metrics.json"
+    path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def create_suite(*, verification_root: Path | str, suite: str, title: str | None = None) -> SuiteResult:
@@ -253,7 +328,37 @@ TODO
 TODO
 """,
     )
+    write_run_metrics(run_dir)
     return RunResult(run_dir=run_dir)
+
+
+def run_acceptance(*, verification_root: Path | str, suite: str, run_dir: Path | str) -> AcceptanceResult:
+    root = Path(verification_root)
+    resolved_run_dir = Path(run_dir)
+    acceptance_command = _extract_acceptance_command(root / "suites" / suite / "acceptance.md")
+    output_path = resolved_run_dir / "acceptance" / "acceptance-output.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    if not acceptance_command:
+        output_path.write_text("No acceptance command configured.\n", encoding="utf-8")
+        metrics_path = write_run_metrics(resolved_run_dir, started_at=started, ended_at=time.time())
+        return AcceptanceResult(output_path=output_path, metrics_path=metrics_path, returncode=2)
+    completed = subprocess.run(
+        acceptance_command,
+        cwd=resolved_run_dir / "workspace",
+        shell=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    output_path.write_text(
+        f"$ {acceptance_command}\n\n[stdout]\n{completed.stdout}\n[stderr]\n{completed.stderr}\n[returncode]\n{completed.returncode}\n",
+        encoding="utf-8",
+    )
+    metrics_path = write_run_metrics(resolved_run_dir, started_at=started, ended_at=time.time())
+    return AcceptanceResult(output_path=output_path, metrics_path=metrics_path, returncode=completed.returncode)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -270,6 +375,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--platform", required=True)
     run_parser.add_argument("--model", required=True)
     run_parser.add_argument("--run-name", required=True)
+
+    acceptance_parser = subparsers.add_parser("acceptance", help="Run a suite acceptance command for a run.")
+    acceptance_parser.add_argument("suite")
+    acceptance_parser.add_argument("--run-dir", required=True, type=Path)
 
     return parser
 
@@ -291,6 +400,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.run_dir)
         return 0
+    if args.command == "acceptance":
+        result = run_acceptance(
+            verification_root=args.verification_root,
+            suite=args.suite,
+            run_dir=args.run_dir,
+        )
+        print(result.output_path)
+        return result.returncode
     parser.error(f"unknown command: {args.command}")
     return 2
 

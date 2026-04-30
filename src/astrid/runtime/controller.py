@@ -92,7 +92,12 @@ class RuntimeController:
         self._build_system_prompt = build_system_prompt_fn
         self._save_history_entries = save_history_entries_fn
 
-    def handle_user_input(self, user_input: str) -> list[dict[str, str]] | None:
+    def handle_user_input(
+        self,
+        user_input: str,
+        *,
+        callbacks: RuntimeTurnCallbacks | None = None,
+    ) -> list[dict[str, str]] | None:
         if user_input == "/exit":
             return None
         if user_input.startswith("/transcript-save "):
@@ -129,7 +134,7 @@ class RuntimeController:
             self.output_writer(result.output)
             return self.messages
 
-        return self.execute_agent_turn(user_input)
+        return self.execute_agent_turn(user_input, callbacks=callbacks)
 
     def execute_agent_turn(
         self,

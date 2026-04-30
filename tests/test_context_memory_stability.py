@@ -74,3 +74,30 @@ def test_session_resume_preserves_message_order_and_tool_payloads(tmp_path, monk
 
     assert loaded is not None
     assert loaded.messages == messages
+
+
+def test_compacted_session_resume_keeps_latest_constraints_and_failed_test(tmp_path, monkeypatch):
+    sessions_dir = tmp_path / "sessions"
+    monkeypatch.setattr(session_mod, "ASTRID_DIR", tmp_path)
+    monkeypatch.setattr(session_mod, "SESSIONS_DIR", sessions_dir)
+
+    manager = ContextManager(model="default", context_window=700)
+    manager.add_message({"role": "system", "content": "You are Astrid."})
+    manager.add_message({"role": "user", "content": "CURRENT TASK: fix calculator.py without changing tests"})
+    for index in range(25):
+        manager.add_message({"role": "assistant_progress", "content": "old progress " + str(index) + " x" * 60})
+        manager.add_message({"role": "assistant", "content": "old detail " + str(index) + " y" * 80})
+    manager.add_message({"role": "user", "content": "Latest constraint: keep public API names unchanged."})
+    manager.add_message({"role": "assistant_tool_call", "content": "run_command", "input": {"command": "pytest -q"}})
+    manager.add_message({"role": "tool_result", "content": "FAILED test_calculator.py::test_divide_by_zero"})
+
+    session = create_new_session(workspace="/tmp/astrid")
+    session.messages = manager.compact_messages()
+    save_session(session)
+    loaded = load_session(session.session_id)
+
+    assert loaded is not None
+    combined = "\n".join(str(message) for message in loaded.messages)
+    assert "fix calculator.py without changing tests" in combined
+    assert "keep public API names unchanged" in combined
+    assert "FAILED test_calculator.py::test_divide_by_zero" in combined

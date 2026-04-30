@@ -81,3 +81,36 @@ def test_create_run_can_skip_missing_seed_workspace(tmp_path: Path) -> None:
 
     assert (result.run_dir / "workspace").is_dir()
     assert (result.run_dir / "prompts" / "round-01.md").exists()
+
+
+def test_run_acceptance_writes_output_and_metrics(tmp_path: Path) -> None:
+    harness = _load_harness_module()
+    verification_root = tmp_path / "verification"
+    suite_dir = verification_root / "suites" / "coding"
+    seed_dir = suite_dir / "seed-workspace"
+    seed_dir.mkdir(parents=True)
+    (seed_dir / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (suite_dir / "prompt.md").write_text("prompt\n", encoding="utf-8")
+    (suite_dir / "acceptance.md").write_text(
+        "# 验收\n\n```bash\npython app.py\n```\n",
+        encoding="utf-8",
+    )
+    run = harness.create_run(
+        verification_root=verification_root,
+        suite="coding",
+        platform="astrid",
+        model="minimax2.7",
+        run_name="2026-05-01-coding",
+    )
+
+    result = harness.run_acceptance(
+        verification_root=verification_root,
+        suite="coding",
+        run_dir=run.run_dir,
+    )
+
+    assert result.returncode == 0
+    assert "[stdout]" in result.output_path.read_text(encoding="utf-8")
+    metrics = result.metrics_path.read_text(encoding="utf-8")
+    assert '"source_lines"' in metrics
+    assert '"token_usage": "未采集"' in metrics

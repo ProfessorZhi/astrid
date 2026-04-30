@@ -126,6 +126,24 @@ from astrid.tui.transcript import (
 from astrid.tui.types import OrchestrationWorker, TranscriptEntry
 from astrid.core.types import ChatMessage, ModelAdapter
 from astrid.core.workspace import resolve_tool_path
+from astrid.ui.full.status import (
+    SINGLE_AGENT_DEFAULT_VERB as _SINGLE_AGENT_DEFAULT_VERB,
+    render_busy_spinner as _render_busy_spinner,
+    render_single_agent_busy_line as _render_single_agent_busy_line,
+    summarize_progress_update as _status_summarize_progress_update,
+)
+from astrid.ui.full.writer import (
+    ThrottledRenderer as _ThrottledRenderer,
+    busy_animation_interval as _busy_animation_interval,
+    idle_poll_interval as _idle_poll_interval,
+    render_throttle_interval as _render_throttle_interval,
+    should_skip_agent_frame_update as _should_skip_agent_frame_update,
+)
+from astrid.ui.full.viewport import (
+    slice_content_lines as _viewport_slice_content_lines,
+    slice_top_anchored_content_lines as _viewport_slice_top_anchored_content_lines,
+)
+from astrid.ui.full.renderer import render_full_welcome as _render_full_welcome
 
 # ---------------------------------------------------------------------------
 # Terminal size 鈥?use unified cache from chrome module
@@ -167,97 +185,6 @@ def _should_defer_chunk_for_paste_coalescing(chunk: str) -> bool:
         return any(ch not in {"\n", "\t", " "} and not ("\x00" <= ch <= "\x1f") for ch in first_line)
     return any(ch not in {"\n", "\t", " "} and not ("\x00" <= ch <= "\x1f") for ch in normalized)
 
-
-# ---------------------------------------------------------------------------
-# Throttled renderer
-# ---------------------------------------------------------------------------
-
-class _ThrottledRenderer:
-    """Coalesces rapid rerender() calls into at most one actual render per interval.
-
-    THREAD SAFETY: The actual render function (_render_fn) is ONLY executed on
-    the thread that calls ``flush()`` or ``force()``.  ``request()`` never
-    invokes the render function directly 鈥?it only marks a pending flag.  This
-    ensures that background threads (agent, collapse timer) can safely call
-    ``request()`` without writing to stdout concurrently with the main UI
-    thread.
-    """
-
-    __slots__ = ("_render_fn", "_min_interval", "_pending", "_last_render_time", "_lock")
-
-    def __init__(self, render_fn: Callable[[], None], min_interval: float = 0.033) -> None:
-        self._render_fn = render_fn
-        self._min_interval = min_interval  # ~30 fps cap (sufficient for terminal UI)
-        self._pending = False
-        self._last_render_time: float = 0.0
-        self._lock = threading.Lock()
-
-    def request(self) -> None:
-        """Mark that a rerender is needed.
-
-        This method is safe to call from any thread.  It never invokes the
-        render function 鈥?the actual render happens on the next ``flush()``
-        call from the main event loop.
-        """
-        with self._lock:
-            self._pending = True
-
-    def flush(self) -> None:
-        """Execute a pending render if the throttle interval has elapsed.
-
-        Must be called from the main UI thread only.
-        """
-        now = time.monotonic()
-        with self._lock:
-            if not self._pending:
-                return
-            elapsed = now - self._last_render_time
-            if elapsed < self._min_interval:
-                return  # Still within throttle window 鈥?defer
-            self._pending = False
-            self._last_render_time = now
-        self._render_fn()
-
-    def force(self) -> None:
-        """Unconditionally render now, ignoring throttle.
-
-        Must be called from the main UI thread only.
-        """
-        with self._lock:
-            self._pending = False
-            self._last_render_time = time.monotonic()
-        self._render_fn()
-
-
-def _busy_animation_interval(terminal_mode: str) -> float | None:
-    """Return the spinner cadence for the active terminal mode."""
-    if terminal_mode == "shell":
-        return None
-    return 0.25
-
-
-def _idle_poll_interval(terminal_mode: str) -> float:
-    """Return the main-loop idle sleep interval for the active terminal mode."""
-    if terminal_mode == "shell":
-        return 0.1
-    return 0.05
-
-
-def _render_throttle_interval(terminal_mode: str) -> float:
-    """Return the rerender throttle interval for the active terminal mode."""
-    if terminal_mode == "shell":
-        return 0.08
-    return 0.016
-
-
-def _should_skip_agent_frame_update(
-    transcript_ids: tuple[int, ...],
-    rendered_ids: tuple[int, ...],
-    prompt_body: str,
-    previous_prompt_body: str,
-) -> bool:
-    """Skip redundant inline redraws when nothing visible changed."""
-    return transcript_ids == rendered_ids and prompt_body == previous_prompt_body
 
 
 def _should_record_progress_entries(terminal_mode: str) -> bool:
@@ -434,8 +361,6 @@ def _is_multi_agent_candidate(input_text: str) -> bool:
     return False
 
 
-_SINGLE_AGENT_BUSY_SPINNER_FRAMES: tuple[str, ...] = ("◜", "◠", "◝", "◞", "◡", "◟")
-_SINGLE_AGENT_DEFAULT_VERB = "Transfiguring"
 _CURSOR_SAVE = "\x1b7"
 _CURSOR_RESTORE = "\x1b8"
 
@@ -550,14 +475,6 @@ def _should_rotate_welcome_tips() -> bool:
     value = os.environ.get("ASTRID_ROTATE_WELCOME_TIPS", "")
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
-def _render_busy_spinner(frame: int) -> str:
-    spinner = _SINGLE_AGENT_BUSY_SPINNER_FRAMES[
-        frame % len(_SINGLE_AGENT_BUSY_SPINNER_FRAMES)
-    ]
-    t = theme()
-    return f"{t.progress}{t.bold}{spinner}{t.reset}"
-
-
 def _render_live_status_line(state: ScreenState) -> str | None:
     t = theme()
     status = state.status
@@ -638,28 +555,7 @@ def _set_single_agent_busy_state(
 
 
 def _summarize_progress_update(content: str) -> tuple[str, str]:
-    summary = _truncate_for_display(" ".join(content.split()).strip(), 160)
-    lowered = summary.lower()
-    if any(token in lowered for token in ("review", "validate", "check", "审查", "校验")):
-        return "Reviewing", summary
-    if any(token in lowered for token in ("search", "scan", "inspect", "read", "grep", "搜索", "扫描", "读取")):
-        return "Inspecting", summary
-    if any(token in lowered for token in ("command", "tool", "run", "execute", "命令", "工具", "执行")):
-        return "Running", summary
-    if any(token in lowered for token in ("merge", "combine", "collect", "汇总", "合并")):
-        return "Collecting", summary
-    return _SINGLE_AGENT_DEFAULT_VERB, summary
-
-
-def _render_single_agent_busy_line(state: ScreenState) -> str:
-    t = theme()
-    line = f"{_render_busy_spinner(state.animation_frame)} {t.progress}{t.bold}{state.busy_verb}{t.reset}{t.progress}...{t.reset}"
-    summary = state.current_action_summary
-    if not summary and state.status and state.status != f"{state.busy_verb}...":
-        summary = state.status
-    if summary:
-        return f"{line}\n  {t.assistant}{summary}{t.reset}"
-    return line
+    return _status_summarize_progress_update(content, truncate=_truncate_for_display)
 
 
 def _trim_simple_transcript_for_busy_state(entries: list[TranscriptEntry], state: ScreenState) -> list[TranscriptEntry]:
@@ -1463,31 +1359,19 @@ def _get_simple_static_content_lines(args: TtyAppArgs, state: ScreenState) -> li
 
 
 def _slice_content_lines(lines: list[str], scroll_offset: int, window_size: int) -> list[str]:
-    window_size = max(1, window_size)
-    max_offset = max(0, len(lines) - window_size)
-    offset = max(0, min(scroll_offset, max_offset))
-    if offset > 0:
-        content_window_size = max(1, window_size - 1)
-        end = min(len(lines), content_window_size + offset + 1)
-        start = max(0, end - content_window_size)
-        visible = list(lines[start:end])
-        visible.append(f"{SUBTLE}── scroll {offset}/{max_offset} (PgUp/PgDn or scroll)──{RESET}")
-        return visible
-    end = len(lines)
-    start = max(0, end - window_size)
-    visible = lines[start:end]
-    return visible
+    return _viewport_slice_content_lines(lines, scroll_offset, window_size, subtle=SUBTLE, reset=RESET)
 
 
 def _slice_top_anchored_content_lines(
     lines: list[str], scroll_offset: int, window_size: int
 ) -> list[str]:
-    window_size = max(1, window_size)
-    max_offset = max(0, len(lines) - window_size)
-    offset = max(0, min(scroll_offset, max_offset))
-    if offset <= 0:
-        return lines[:window_size]
-    return _slice_content_lines(lines, offset, window_size)
+    return _viewport_slice_top_anchored_content_lines(
+        lines,
+        scroll_offset,
+        window_size,
+        subtle=SUBTLE,
+        reset=RESET,
+    )
 
 
 def _build_simple_page_flow_document(
@@ -1904,7 +1788,7 @@ def _build_welcome_workbench(args: TtyAppArgs, state: ScreenState, *, width: int
     recent_items = _build_welcome_recent_items(state.history)
     if not recent_items:
         recent_items = ["No recent activity yet"]
-    return render_welcome_workbench(
+    return _render_full_welcome(
         app_name="codingagent x astrid",
         version=f"welcome · {_terminal_mode_label()}",
         model_name=model_name,

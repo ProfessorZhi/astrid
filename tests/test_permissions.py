@@ -133,3 +133,28 @@ def test_permission_mode_normalizes_environment(tmp_path: Path, monkeypatch) -> 
 
     assert normalize_permission_mode(None) == "eval-workspace"
     assert PermissionManager(str(tmp_path)).mode == "eval-workspace"
+
+
+def test_workspace_allowlist_env_allows_extra_root(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    workspace.mkdir()
+    external.mkdir()
+    monkeypatch.setenv("ASTRID_WORKSPACE_ALLOWLIST", str(external))
+    manager = PermissionManager(str(workspace), mode="eval-workspace")
+
+    manager.ensure_path_access(str(external / "file.txt"), "read")
+    manager.ensure_edit(str(external / "file.txt"), "diff")
+    manager.ensure_command("python", ["-m", "pytest"], str(external))
+
+
+def test_eval_workspace_still_rejects_dangerous_command_in_allowlisted_root(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    workspace.mkdir()
+    external.mkdir()
+    monkeypatch.setenv("ASTRID_WORKSPACE_ALLOWLIST", str(external))
+    manager = PermissionManager(str(workspace), mode="eval-workspace")
+
+    with pytest.raises(RuntimeError, match="Command denied by eval-workspace mode"):
+        manager.ensure_command("git", ["reset", "--hard"], str(external))
