@@ -24,7 +24,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
-from astrid.core.agent_loop import run_agent_turn
 from astrid.runtime.background_tasks import list_background_tasks
 from astrid.cli.cli_commands import (
     SLASH_COMMANDS,
@@ -32,6 +31,7 @@ from astrid.cli.cli_commands import (
     try_handle_local_command,
 )
 from astrid.runtime.config import load_pet_settings, save_pet_settings
+from astrid.runtime.controller import RuntimeController, RuntimeTurnCallbacks
 from astrid.runtime.cost_tracker import CostTracker
 from astrid.state.history import load_history_entries, save_history_entries
 from astrid.runtime.local_tool_shortcuts import parse_local_tool_shortcut
@@ -50,7 +50,6 @@ from astrid.core.orchestration import (
     sample_spinner_verb,
 )
 from astrid.runtime.permissions import PermissionManager
-from astrid.core.prompt import build_system_prompt
 from astrid.core.sub_agents import AgentType, SubAgentManager
 from astrid.state.session import (
     AutosaveManager,
@@ -279,6 +278,7 @@ class TtyAppArgs:
     messages: list[ChatMessage]
     cwd: str
     permissions: PermissionManager
+    controller: RuntimeController | None = None
 
 
 @dataclass
@@ -2939,6 +2939,36 @@ def _execute_tool_shortcut(
         _drain_next_pending_turn(args, state, rerender)
 
 
+def _ensure_runtime_controller(args: TtyAppArgs, state: ScreenState) -> RuntimeController:
+    if args.controller is None:
+        args.controller = RuntimeController(
+            cwd=args.cwd,
+            permissions=args.permissions,
+            transcript=state.transcript,
+            tools=args.tools,
+            messages=args.messages,
+            history=state.history,
+            model=args.model,
+            max_tool_steps=None,
+            advanced_memory_mgr=None,
+            context_mgr=None,
+            logger=logging.getLogger("astrid.tui"),
+            local_command_handler=try_handle_local_command,
+            transcript_saver=lambda output_path: _save_transcript(
+                state,
+                args.cwd,
+                args.permissions,
+                output_path,
+            ),
+            save_history_entries_fn=save_history_entries,
+        )
+    args.controller.messages = args.messages
+    args.controller.history = state.history
+    args.controller.transcript = state.transcript
+    args.controller.permissions = args.permissions
+    return args.controller
+
+
 # ---------------------------------------------------------------------------
 # Input handling
 # ---------------------------------------------------------------------------
@@ -3085,22 +3115,7 @@ def _handle_input(
     aggregated_edit_by_key: dict[str, AggregatedEditProgress] = {}
     aggregated_edit_by_entry_id: dict[int, AggregatedEditProgress] = {}
 
-    if hasattr(args.tools, "refresh_capabilities"):
-        args.tools.refresh_capabilities()
-
-    # Refresh system prompt
-    args.messages[0] = {
-        "role": "system",
-        "content": build_system_prompt(
-            args.cwd,
-            args.permissions.get_summary(),
-            {
-                "skills": args.tools.get_skills(),
-                "mcpServers": args.tools.get_mcp_servers(),
-            },
-        ),
-    }
-    args.messages.append({"role": "user", "content": input_text})
+    controller = _ensure_runtime_controller(args, state)
     use_multi_agent = _is_multi_agent_candidate(input_text)
     if use_multi_agent:
         _begin_orchestration(state, input_text)
@@ -3291,8 +3306,6 @@ def _handle_input(
         # Don't reset scroll offset 鈥?respect user's manual scroll position
         rerender()
 
-    args.permissions.begin_turn()
-    
     # Run agent turn in background thread to keep UI responsive
     agent_error = None
     agent_result: dict = {"messages": None}
@@ -3354,6 +3367,7 @@ def _handle_input(
             return
 
         try:
+            controller.begin_permission_turn()
             worker_specs = [
                 (
                     AgentType.EXPLORE,
@@ -3480,7 +3494,7 @@ def _handle_input(
         except Exception as e:
             agent_error = e
         finally:
-            args.permissions.end_turn()
+            controller.end_permission_turn()
             with agent_thread_lock:
                 agent_result["done"] = True
             _prune_completed_progress_entries(state)
@@ -3493,23 +3507,23 @@ def _handle_input(
     def _run_agent_background():
         nonlocal agent_error, agent_result
         try:
-            next_messages = run_agent_turn(
-                model=args.model,
-                tools=args.tools,
-                messages=list(args.messages),  # Copy to avoid race condition
-                cwd=args.cwd,
-                permissions=args.permissions,
-                on_tool_start=on_tool_start,
-                on_tool_result=on_tool_result,
-                on_assistant_message=on_assistant_message,
-                on_progress_message=on_progress_message,
+            next_messages = controller.execute_agent_turn(
+                input_text,
+                callbacks=RuntimeTurnCallbacks(
+                    on_assistant_message=on_assistant_message,
+                    on_progress_message=on_progress_message,
+                    on_tool_start=on_tool_start,
+                    on_tool_result=on_tool_result,
+                ),
+                record_user_transcript=False,
+                record_history=False,
+                emit_output=False,
             )
             with agent_thread_lock:
                 agent_result["messages"] = next_messages
         except Exception as e:
             agent_error = e
         finally:
-            args.permissions.end_turn()
             with agent_thread_lock:
                 agent_result["done"] = True
             _prune_completed_progress_entries(state)
@@ -3549,6 +3563,7 @@ def run_tty_app(
     messages: list[ChatMessage],
     cwd: str,
     permissions: PermissionManager,
+    controller: RuntimeController | None = None,
     resume_session: str | None = None,
     list_sessions_only: bool = False,
 ) -> list[ChatMessage]:
@@ -3572,6 +3587,7 @@ def run_tty_app(
         messages=messages,
         cwd=cwd,
         permissions=permissions,
+        controller=controller,
     )
 
     # Session initialization
@@ -3639,6 +3655,12 @@ def run_tty_app(
             state.transcript.append(entry)
         
         print(f"Restored {len(session.messages)} messages, {len(state.transcript)} transcript entries.")
+
+    if args.controller is not None:
+        args.controller.messages = args.messages
+        args.controller.history = state.history
+        args.controller.transcript = state.transcript
+        args.controller.permissions = args.permissions
 
     # Wire up permission prompt handler
     approval_event = threading.Event()

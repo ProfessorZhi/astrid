@@ -63,8 +63,8 @@
 原先对比 Codex / Claude Code 得出的六个差距，Astrid 已经完成第一轮产品化改进：
 
 1. **TUI 性能和 shell 体验**
-   - 已实现：transcript 缓存/窗口化渲染、行级 diff writer、Windows/Codex 内置终端默认 shell/native scrollback、recent 历史乱码过滤、小窗口 welcome 顶部显示修复。
-   - 仍剩：继续拆 `tty_app.py`，把 renderer、input、status、transcript viewport 分离。拆分必须保持 prompt/footer pinned-bottom 行为。
+   - 已实现：transcript 缓存/窗口化渲染、行级 diff writer、Windows/Codex 内置终端默认 shell/native scrollback、recent 历史乱码过滤、小窗口 welcome 顶部显示修复；包内重组后 `tty_app` 已归入 `src/astrid/ui/full/`，普通 full TUI 模型回合已通过 `RuntimeController.execute_agent_turn(...)` 执行，多 agent 分支的 permission turn 也通过 `RuntimeController` 包住。
+   - 仍剩：继续拆 `src/astrid/ui/full/tty_app.py` 的 renderer、input、status、transcript viewport。拆分必须保持 prompt/footer pinned-bottom 行为；多 agent orchestration 的 worker 执行和结果合成还要继续收拢到 runtime/controller。
 
 2. **权限和沙箱治理**
    - 已实现：权限 policy snapshot、permission tests、更清楚的权限边界说明。
@@ -100,14 +100,14 @@
 
 第三阶段已经把根部主体收敛到标准边界：`agent_loop/poly_commands` 进入 `core`，`advanced_memory` 进入 `state`，`permissions/auto_mode` 进入 `runtime`，`tty_app` 进入 `ui/full`。`src/astrid/` 根部只保留 `main.py` 和 `__init__.py`；不要再把功能模块加回根部。
 
-第三阶段后续已经把项目内部 import 改到新路径，并删除根部兼容 shim。后续不要为了短期方便重新在 `src/astrid/` 根部添加 shim；如果确实需要外部兼容层，要单独说明 public API 兼容目标和删除计划。
+第三阶段后续已经把项目内部 import 改到新路径，并删除根部兼容 shim。普通 full TUI turn 执行也已从 `src/astrid/ui/full/tty_app.py` 收拢到 `RuntimeController.execute_agent_turn(...)`；full TUI 现在只提供渲染和回调，不应再直接调用 `run_agent_turn`。多 agent 分支暂时仍在 full TUI 内编排 worker，但 permission turn 已经通过 `RuntimeController` 进入 runtime 边界。后续不要为了短期方便重新在 `src/astrid/` 根部添加 shim；如果确实需要外部兼容层，要单独说明 public API 兼容目标和删除计划。
 
 目标边界：
 
 - `src/astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。
 - `src/astrid/runtime/`：统一 controller、turn runner、事件模型、permission flow、queue/steer 协调。
 - `src/astrid/ui/`：`shell/`、`inline/`、`full/` 三个终端前端，`common/` 放共享输入、approval、transcript 辅助。
-- `src/astrid/ui/common/frontend.py` 定义三前端共享的最小 frontend contract。权限模式、turn 执行、history、transcript、steer/queue 应保持在 `RuntimeController` 和 runtime 层；不要在 shell、inline、full 三个前端各自复制权限逻辑。
+- `src/astrid/ui/common/frontend.py` 定义三前端共享的最小 frontend contract。权限模式、turn 执行、history、transcript、steer/queue 应保持在 `RuntimeController` 和 runtime 层；不要在 shell、inline、full 三个前端各自复制权限逻辑。full TUI 普通模型回合已经走 `RuntimeController.execute_agent_turn(...)`，后续新增权限模式必须先改 runtime/controller，再让各前端只渲染对应状态。
 - `src/astrid/cli/`：slash commands、management commands、installer 等命令行入口辅助。
 - `src/astrid/state/`：session、history、memory、advanced memory 等持久状态。
 - `src/astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。
@@ -146,7 +146,8 @@
 
 3. **TUI runtime 拆分**
    - 目标：降低 `tty_app.py` 复杂度，继续接近 Codex/Claude Code 的组件化 TUI runtime。
-   - 要做：拆出 renderer、input box、status/progress、transcript viewport、screen writer。
+   - 已完成：`tty_app.py` 已移动到 `src/astrid/ui/full/tty_app.py`；普通 full TUI 模型回合已改为调用 `RuntimeController.execute_agent_turn(...)`，不再直接调用 `run_agent_turn`；多 agent 分支的 permission turn 已改为通过 `RuntimeController` 包装。
+   - 要做：拆出 renderer、input box、status/progress、transcript viewport、screen writer；继续把 full TUI 的多 agent worker 编排、结果合成和 permission presenter 抽成 runtime-owned flow + UI callback。
    - 验收：现有 TUI 测试全绿；长 transcript 下普通输入不触发全量 transcript render；prompt/footer 仍 pinned-bottom。
 
 4. **中文输出编码修复**

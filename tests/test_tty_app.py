@@ -50,6 +50,7 @@ from astrid.tui.buddy_state import build_buddy_profile
 from astrid.tui.input_parser import KeyEvent
 from astrid.integrations.mock_model import MockModelAdapter
 from astrid.runtime.permissions import PermissionManager
+from astrid.runtime.controller import RuntimeController
 from astrid.core.prompt import build_system_prompt
 from astrid.tools import create_default_tool_registry
 from astrid.tui.chrome import strip_ansi
@@ -2306,7 +2307,22 @@ def test_handle_input_drops_progress_entries_after_final_answer(monkeypatch, tmp
         kwargs["on_assistant_message"]("Final answer")
         return kwargs["messages"] + [{"role": "assistant", "content": "Final answer"}]
 
-    monkeypatch.setattr("astrid.ui.full.tty_app.run_agent_turn", _fake_run_agent_turn)
+    args.controller = RuntimeController(
+        cwd=cwd,
+        permissions=permissions,
+        transcript=state.transcript,
+        tools=tools,
+        messages=messages,
+        history=state.history,
+        model=args.model,
+        max_tool_steps=50,
+        advanced_memory_mgr=None,
+        context_mgr=None,
+        logger=types.SimpleNamespace(debug=lambda *_args, **_kwargs: None),
+        local_command_handler=lambda _user_input, _tools: None,
+        transcript_saver=lambda output_path: output_path,
+        run_agent_turn_fn=_fake_run_agent_turn,
+    )
 
     should_exit = _handle_input(args, state, lambda: None, submitted_raw_input="who are you")
 

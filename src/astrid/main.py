@@ -396,6 +396,19 @@ def main() -> None:
             )
             return
 
+        controller = _make_runtime_controller(
+            cwd=session.cwd,
+            permissions=session.permissions,
+            transcript=session.transcript,
+            tools=session.tools,
+            messages=session.messages,
+            history=session.history,
+            model=session.model,
+            max_tool_steps=session.max_tool_steps,
+            advanced_memory_mgr=session.advanced_memory_mgr,
+            context_mgr=session.context_mgr,
+            logger=session.logger,
+        )
         run_tty_app(
             runtime=session.runtime,
             tools=session.tools,
@@ -403,6 +416,7 @@ def main() -> None:
             messages=session.messages,
             cwd=session.cwd,
             permissions=session.permissions,
+            controller=controller,
             resume_session=args.resume,
             list_sessions_only=args.list_sessions,
         )

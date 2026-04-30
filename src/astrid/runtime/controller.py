@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from astrid.core.agent_loop import run_agent_turn as default_run_agent_turn
@@ -17,6 +18,20 @@ OutputWriter = Callable[[str], None]
 RunAgentTurn = Callable[..., list[dict[str, str]]]
 BuildSystemPrompt = Callable[..., str]
 SaveHistoryEntries = Callable[[list[str], str], None]
+
+
+@dataclass
+class RuntimeTurnCallbacks:
+    """UI callbacks for one model turn.
+
+    RuntimeController owns turn lifecycle and permission boundaries. Frontends
+    may supply these callbacks to render progress in their own style.
+    """
+
+    on_assistant_message: Callable[[str], None] | None = None
+    on_progress_message: Callable[[str], None] | None = None
+    on_tool_start: Callable[[str, dict[str, Any]], None] | None = None
+    on_tool_result: Callable[[str, str, bool], None] | None = None
 
 
 def append_transcript(transcript: list[TranscriptEntry], **kwargs: Any) -> None:
@@ -114,10 +129,24 @@ class RuntimeController:
             self.output_writer(result.output)
             return self.messages
 
-        append_transcript(self.transcript, kind="user", body=user_input)
+        return self.execute_agent_turn(user_input)
+
+    def execute_agent_turn(
+        self,
+        user_input: str,
+        *,
+        callbacks: RuntimeTurnCallbacks | None = None,
+        record_user_transcript: bool = True,
+        record_history: bool = True,
+        emit_output: bool = True,
+    ) -> list[dict[str, str]]:
+        """Execute one model turn behind the UI-neutral runtime boundary."""
+        if record_user_transcript:
+            append_transcript(self.transcript, kind="user", body=user_input)
         self.messages.append({"role": "user", "content": user_input})
-        self.history.append(user_input)
-        self._save_history_entries(self.history, self.cwd)
+        if record_history:
+            self.history.append(user_input)
+            self._save_history_entries(self.history, self.cwd)
         if hasattr(self.tools, "refresh_capabilities"):
             self.tools.refresh_capabilities()
         self.messages[0] = {
@@ -128,17 +157,28 @@ class RuntimeController:
                 {
                     "skills": self.tools.get_skills(),
                     "mcpServers": self.tools.get_mcp_servers(),
-                    "advanced_memory_context": self.advanced_memory_mgr.format_context_for_prompt(max_tokens=5000),
+                    "advanced_memory_context": (
+                        self.advanced_memory_mgr.format_context_for_prompt(max_tokens=5000)
+                        if self.advanced_memory_mgr is not None
+                        else ""
+                    ),
                 },
             ),
         }
         self.permissions.begin_turn()
 
         def _on_progress(content: str) -> None:
+            if callbacks and callbacks.on_progress_message:
+                callbacks.on_progress_message(content)
+                return
             append_transcript(self.transcript, kind="assistant", body=content)
-            self.output_writer(f"[progress] {content}")
+            if emit_output:
+                self.output_writer(f"[progress] {content}")
 
         def _on_tool_start(tool_name: str, input_data: dict[str, Any]) -> None:
+            if callbacks and callbacks.on_tool_start:
+                callbacks.on_tool_start(tool_name, input_data)
+                return
             body = _preview(input_data)
             append_transcript(
                 self.transcript,
@@ -147,9 +187,13 @@ class RuntimeController:
                 toolName=tool_name,
                 status="running",
             )
-            self.output_writer(f"[tool:start] {tool_name} {body}")
+            if emit_output:
+                self.output_writer(f"[tool:start] {tool_name} {body}")
 
         def _on_tool_result(tool_name: str, output: str, is_error: bool) -> None:
+            if callbacks and callbacks.on_tool_result:
+                callbacks.on_tool_result(tool_name, output, is_error)
+                return
             status = "error" if is_error else "success"
             body = _preview(output, limit=1200)
             append_transcript(
@@ -159,26 +203,47 @@ class RuntimeController:
                 toolName=tool_name,
                 status=status,
             )
-            self.output_writer(f"[tool:{status}] {tool_name}\n{body}")
+            if emit_output:
+                self.output_writer(f"[tool:{status}] {tool_name}\n{body}")
 
-        self.messages = self._run_agent_turn(
-            model=self.model,
-            tools=self.tools,
-            messages=self.messages,
-            cwd=self.cwd,
-            permissions=self.permissions,
-            context_manager=self.context_mgr,
-            max_steps=self.max_tool_steps,
-            on_progress_message=_on_progress,
-            on_tool_start=_on_tool_start,
-            on_tool_result=_on_tool_result,
-        )
-        self.permissions.end_turn()
+        try:
+            self.messages = self._run_agent_turn(
+                model=self.model,
+                tools=self.tools,
+                messages=self.messages,
+                cwd=self.cwd,
+                permissions=self.permissions,
+                context_manager=self.context_mgr,
+                max_steps=self.max_tool_steps or 50,
+                on_assistant_message=callbacks.on_assistant_message if callbacks else None,
+                on_progress_message=_on_progress,
+                on_tool_start=_on_tool_start,
+                on_tool_result=_on_tool_result,
+            )
+        finally:
+            self.permissions.end_turn()
         if self.context_mgr:
             stats = self.context_mgr.get_stats()
             self.logger.debug("After turn: %d tokens (%.0f%%)", stats.total_tokens, stats.usage_percentage)
         last_assistant = next((message for message in reversed(self.messages) if message["role"] == "assistant"), None)
-        if last_assistant:
+        if last_assistant and not callbacks:
             append_transcript(self.transcript, kind="assistant", body=last_assistant["content"])
-            self.output_writer(last_assistant["content"])
+            if emit_output:
+                self.output_writer(last_assistant["content"])
         return self.messages
+
+    def run_permission_turn(self, fn: Callable[[], Any]) -> Any:
+        """Run a custom runtime operation inside one permission turn."""
+        self.permissions.begin_turn()
+        try:
+            return fn()
+        finally:
+            self.permissions.end_turn()
+
+    def begin_permission_turn(self) -> None:
+        """Begin a custom runtime turn that is orchestrated outside agent_loop."""
+        self.permissions.begin_turn()
+
+    def end_permission_turn(self) -> None:
+        """End a custom runtime turn that is orchestrated outside agent_loop."""
+        self.permissions.end_turn()
