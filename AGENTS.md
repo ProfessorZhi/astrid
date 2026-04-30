@@ -1,5 +1,7 @@
 # Astrid Agent 工作总账
 
+运行时约束：Astrid 会读取项目内 `AGENTS.md` 作为项目指令链路，从 git root 到当前工作目录逐层读取，越靠近当前目录越具体。长期项目约束写进 `AGENTS.md`，不要为了记规则继续在项目根创建散乱的 `.astrid*` 状态目录。
+
 这个文档是后续 agent 改进 Astrid 时必须先读的项目总账。它记录 Astrid 当前工作流、已完成进度、后续功能路线图、本地评测规范和验证命令。
 
 ## 第一性原则
@@ -15,15 +17,16 @@
 后续改 Astrid 时，必须多参考 Claude Code 和 Codex 的真实实现，不要只凭产品印象或二手总结下判断。
 
 - Codex 官方源码：`https://github.com/openai/codex`
-- Claude Code TypeScript 源码本地路径：`F:\agent_project\codingagent\claudecodes\claudecodets`
+- Codex 本地源码：`F:\agent_project\codingagent\codex\codex`
+- Claude Code TypeScript 本地源码：`F:\agent_project\codingagent\claudecodes\claudecodets\claudecodets`
 - Claude Code 学习网站：`https://claudecn.com/`
 - Claude Code 代码学习站：`https://code.claudecn.com/`
 
 参考方式：
 
-- 做 TUI 时，要重点参考本地 Claude Code TypeScript 源码里的终端 UI 组织方式，尤其是输入区、transcript、状态区、滚动、copy-friendly 行为和组件边界；同时参考 Codex 的 Rust/Ratatui 分层来理解 renderer/runtime 纪律。
-- 做 runtime/权限/sandbox/headless exec/MCP 时，优先看 Codex 的 Rust CLI/runtime 分层。
-- 做 agent loop、Todo、Subagent、Skills、Hooks、Memory、Steering、权限模式时，优先看本地 Claude Code TypeScript 源码和 Claude Code 学习站。
+- 做权限、自动化测试、TUI 重构前，必须先看本地 Codex 和 Claude Code 对应源码；不要只凭产品印象下判断。
+- 做 TUI 时，重点参考 Codex 的 inline viewport/bottom pane 分层，以及 Claude Code 的 Ink/PromptInput 组件边界。
+- 做 runtime、权限、sandbox、headless exec、MCP、自动化 eval 时，优先参考 Codex 本地源码；做 agent loop、Todo、Subagent、Skills、Hooks、Memory、Steering、权限模式时，同时参考 Claude Code 本地源码。
 - 做 Astrid 代码改动前，先定位 Astrid 当前对应模块，再查参考项目里相近模块。结论必须写清楚“本地 Astrid 现状是什么、参考项目怎么做、这次只借鉴哪一部分”。
 - 不要把参考项目的概念照搬成 Astrid 已实现能力。比如 Astrid 当前只有 skills/MCP/hooks 等扩展面，不要直接称为完整 plugin system；当前 steering 是 interrupt-and-replan，不要说成复杂 mid-token 注入。
 - 如果参考资料来自网页，结论要标注来源 URL；如果来自本地 Claude Code 源码，结论要标注本地文件路径。
@@ -34,13 +37,26 @@
 - 大功能先拆独立分支或 worktree；同一轮不要让多个 agent 同时大改 `astrid/tty_app.py`。
 - 修改代码前先补能复现问题的测试；修改后跑窄测试，再按风险跑全量测试。
 - 本地验证结果放在 `verification/`，该目录被 Git 忽略，不上传 GitHub。
+- 保持仓库根目录干净。不要把截图、浏览器日志、临时 transcript、HTTP server 日志、pid、下载的临时 exe、playwright/mcp 临时状态、pytest cache 或手动测试输出散落在根目录；评测证据必须进入对应 `verification/runs/.../{artifacts,acceptance,transcripts}/`，零散 smoke 记录进入 `verification/ad-hoc-smoke/`，纯缓存直接清理或加入 `.gitignore`。`tests/` 是正式 pytest 测试目录，临时权限/手动读写测试不要写进 `tests/`，应使用 `test/`、`scratch/` 或 run workspace，并在结束后清理。
+- 点号目录必须有明确归属：`.git/` 是版本库，不能动；`.astrid/`、`.astrid-memory/` 是 Astrid 本地状态，只有确认不再需要对应 skill/memory 时才清；`.superpowers/` 是本地 Superpowers 工作状态，可按需清理但不要提交；`.playwright-mcp/`、`.pytest_cache/`、`__pycache__/`、空的工具状态目录和 `.tmp*` 属于可清理缓存。不要新建来源不明的点号目录；如果工具自动生成，结束时判断是状态、证据还是缓存，并按本条归位或删除。
+- Astrid skills 采用 Codex 风格的入口/实体分离：默认实体目录是 `F:\funnyskills\astrid-skills`，`C:\Users\Administrator\.astrid\skills` 只是指向它的用户入口链接；`ASTRID_SKILLS_ROOT` 可显式覆盖。不要再把新 skill 写到项目根 `.astrid/skills`；发现旧项目 `.astrid/skills` 时只作为迁移来源，迁到默认 skills 实体目录后备份旧目录。
 - 做 coding-agent 横向对比前，必须先问用户要和谁对比。默认优先建议 Claude Code，因为本机可在终端输入 `claude` 运行，且接入 MiniMax，成本更低；Codex 可作为对比项，但成本更高。
+- 横向对比里的 Codex 当前默认是**评测主持人**，不是被测 agent。Codex 负责设计 suite、写第一轮 prompt、准备 seed workspace / acceptance、把同一题投给各被测 agent、监督各轮产物、基于真实失败输出写下一轮修复 prompt、验收和总结；被测 agent 必须由 Astrid、Claude Code、Codex CLI 等各自真实终端会话执行。
+- 真实 coding-agent 评测默认使用 Codex 桌面内置终端运行被测 agent，不要默认用外部 PowerShell/Windows Terminal 窗口。内置终端更容易保留当前 workspace、减少焦点污染，并方便 Codex 在旁边验收。
+- 除非用户明确要求“自动化跑 agent”或“测试非 TTY/eval 模式”，不要用 Codex 通过 stdin 管道、脚本或 API 代替 Astrid / Claude Code 执行编程任务。真实编程能力评测应在内置终端打开对应 agent，把同一份 prompt 原文交给被测 agent。
+- 不要用 `Start-Process` + `SendKeys`、窗口标题匹配、剪贴板焦点抢占等外部窗口自动化方式给 Astrid / Claude Code 喂 prompt。这会把“窗口焦点是否正确”混进评测，甚至污染当前 Codex 会话；如需便捷执行，只能生成 `run-round-XX.ps1` 这类内置终端辅助脚本，让人或当前终端明确粘贴。
+- Codex 可以也应该按轮次主动主持评测：每轮把对应 `prompts/round-XX.md` 原文交给被测 agent，等待该轮完成后检查 `workspace/`、保存 transcript、跑外部验收、试玩或截图，再决定是否生成下一轮 prompt。不要把“Codex 不写答卷”误解成“Codex 不推进流程”。
+- 如果用户明确让 Codex 客户端自己作为被测对象完成题目，Codex 客户端也必须使用独立的 `verification/runs/codex-client/<model>/<run>/` 交作业文件夹，并按普通 agent run 标准保存每轮 `prompts/round-XX.md`、workspace、验收输出、截图和 `results.md`。不能因为答卷来自当前聊天会话，就只写摘要或省略二轮/三轮提示词。
+- 对浏览器类产物，Codex 主持验收时应优先使用 Codex 桌面内置浏览器做辅助验收。小游戏、网页、工具页、仪表盘等都要尽量打开真实页面，模拟人类点击、输入、键盘、鼠标、窗口缩放和截图；但浏览器辅助验收不能完全代替人工评分，尤其是游戏手感、审美、信息架构和产品判断。
 - 横向对比时，Astrid、Claude Code、Codex 必须使用同一组 prompt、同一套初始 workspace、同一套外部验收命令。
 - 所有测试 prompt、初始文件、agent 产物、transcript、pytest/验收输出，都必须保存到对应的 `verification/runs/<agent-platform>/<model>/<run-name>/` 目录。
 - 评测目录命名要短，并同时包含英文和中文含义：suite 用 `snake-贪吃蛇` 这种名字；agent run 用 `YYYY-MM-DD-snake-贪吃蛇` 这种名字。平台和模型不要揉进 run 名字里，要放在上层目录。
+- 评测材料默认中文优先。suite 里的题目说明、要求、验收标准、首轮 prompt、评分口径必须优先写中文；必要时可以保留英文标题或术语辅助识别。
+- run 里的 `results.md`、`instructions.md`、人工试玩记录、失败原因和结论默认中文优先。真正发给 agent 的 prompt 和 transcript 是证据材料，原则上保留原文；如需要中文可另加说明或翻译文件，不要覆盖历史证据。
 - 评测结论必须区分“第一轮结果”和“多轮修复后结果”。第一轮失败就是第一轮失败；如果二轮通过，要记录二轮修复过程，不能混成一次通过。
 - 严格评测禁止把“改写验收测试后 pytest 通过”算作通过。除非 suite 明确允许改测试，否则 agent 修改、删除、弱化原始验收测试都算失败。
 - 完成一个可验证闭环后再 commit / push。不要把临时验证目录、transcript、缓存文件提交进仓库。
+- 结束评测或浏览器验收前先做根目录清洁检查：`Get-ChildItem -Force` 和 `git status --short --ignored`。发现根目录有新 PNG/TXT/LOG/YML/cache/temp 文件时，先判断是证据还是缓存：证据归入 `verification/` 对应子目录，缓存删除，不能留给下一个 agent 猜用途。
 
 ## 当前进度
 
@@ -74,13 +90,53 @@
 
 后续不要平均用力，优先做能被真实评测验证的功能。
 
+## Astrid 近期重点
+
+近期进入包内大重组阶段。第一阶段不迁 `src/`，先在现有 `astrid/` 包内理清边界；第二阶段再考虑标准 `src/astrid` 布局。
+
+重组顺序固定为：`runtime/controller` → UI frontends → Codex-style inline TUI → Claude-style full TUI。不要继续把 runtime、权限、session、输入、渲染和 shell fallback 都塞进 `main.py` 或 `tty_app.py`。
+
+第二阶段目标是瘦身 `main.py` 和形成四条前端边界：`shell`、`pipe`、`inline`、`full`。`main.py` 只保留 argparse、管理命令分发、终端模式选择、frontend dispatch 和 shutdown cleanup；runtime 初始化进入 `astrid/runtime/bootstrap.py`，pipe 输入进入 `astrid/ui/shell/pipe.py`，banner/quick start 进入 `astrid/ui/shell/banner.py`。
+
+第三阶段再考虑移动高耦合核心模块。不要在第二阶段移动 `agent_loop.py`、`permissions.py`、`memory.py`、`advanced_memory.py`、`mcp.py`、`skills.py`、`tty_app.py` 的主体实现；这些需要单独 PR 和更窄测试。
+
+目标边界：
+
+- `astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。
+- `astrid/runtime/`：统一 controller、turn runner、事件模型、permission flow、queue/steer 协调。
+- `astrid/ui/`：`shell/`、`inline/`、`full/` 三个终端前端，`common/` 放共享输入、approval、transcript 辅助。
+- `astrid/state/`：session、history、memory、advanced memory 等持久状态。
+- `astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。
+- `astrid/tools/`：暂时保留原位，后续单独整理工具注册和工具实现。
+
+近期不要平均用力，优先做三件事：补上权限系统、产品化自动化测试、重构 TUI。每件事开工前都要先对照本地 Codex 和 Claude Code 源码。
+
+1. **权限模式 / eval-workspace**
+   - 这是最该做的下一步。Astrid 当前做无人值守评测还不顺，核心原因是读写文件和命令执行的审批模式不够清楚。
+   - 要实现四档权限模式：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`。
+   - `default`：交互确认，真实 TTY 使用默认模式。
+   - `accept-edits`：自动允许当前 workspace 内文件编辑；命令仍按规则确认。
+   - `eval-workspace`：自动允许当前 workspace 内读写文件和常见开发命令；拒绝 workspace 外写入，拒绝明显危险命令；作为 Astrid eval 推荐默认模式。
+   - `bypassPermissions`：明确高风险模式，只给本机开发者手动启动使用；banner 和 transcript 必须醒目标记。
+   - 测试必须覆盖：workspace 内允许、workspace 外拒绝、危险命令拒绝、真实提示文案清楚。
+
+2. **自动化测试 / eval harness 产品化**
+   - `verification/` 规范已经写得很细，但还缺一键骨架命令。
+   - 要做：创建 suite/run、复制 seed workspace、生成 prompt/instructions、保存 transcript/acceptance/evaluation 模板、生成横向 comparison 表。
+   - 同时补上非 TTY / eval-workspace 的自动化执行能力；不要把非 TTY 自动跑混成默认真实终端评测。
+
+3. **TUI 重构**
+   - 当前 `tty_app.py` 边界不清，不能继续在 shell/native、inline TUI、full-screen TUI 之间混补。
+   - 先对照 Codex inline viewport/bottom pane 和 Claude Code Ink/PromptInput，再拆 renderer、input box、transcript viewport、status/progress、terminal writer。
+   - 目标是最终拥有稳定 controlled TUI；在此之前默认终端体验必须保持可用、可滚动、可复制。
+
 1. **真实 coding-agent eval harness**
-   - 目标：把 `verification/astrid/2026-04-29-real-model-coding-eval/` 里的临时脚本沉淀成可复用本地评测模板。
-   - 要做：支持多任务、多轮失败反馈、权限临时预授权/恢复、transcript 保存、pytest 验收、结果摘要。
-   - 验收：一条命令能生成新 run 目录，并输出每个任务 pass/fail、耗时、失败原因。
+   - 目标：先把“Codex 主持评测闭环，被测 agent 在真实终端写答卷”的人工评测流程产品化，再考虑无人值守自动化。
+   - 要做：一键创建 suite/run 目录、复制 seed workspace、保存首轮 prompt、生成内置终端执行说明、按轮记录 transcript、执行外部验收、基于真实失败输出生成下一轮 prompt、汇总第一轮/二轮结果。
+   - 验收：一条命令能生成新 run 骨架和明确的内置终端操作说明；Codex 能按轮投 prompt、验收和记录；agent 仍由对应终端真实执行并写答卷。
 
 2. **非 TTY / 自动化审批模式**
-   - 目标：让 Astrid 可以安全地做无人值守 coding eval，而不是靠手工改 `~/.astrid/permissions.json`。
+   - 目标：让 Astrid 可以安全地做无人值守 coding eval；这是第二阶段能力，不作为真实终端编程能力评测的默认路径。
    - 要做：增加显式 eval/auto approval 模式，只允许当前 eval workspace 内的文件编辑，并默认拒绝 workspace 外路径和危险命令。
    - 验收：管道输入真实 prompt 时，可以写 eval workspace 内目标文件；越界写入必须失败并有测试覆盖。
 
@@ -126,10 +182,17 @@
 - 不要说 Astrid 只是 single-agent。它已经有 sub-agents 和 orchestration；差距在于产品级 runtime 行为。
 - 不要说 Astrid 是 zero-dependency；`pyproject.toml` 已经列出运行时依赖。
 - 不要把非 TTY 管道测试等同于真实 TUI 交互测试。管道模式无法弹出交互式权限确认。
+- 不要把 Codex 自动喂 prompt 给 Astrid / Claude Code 的结果，直接当成真实终端使用体验结论。那测的是自动化链路 + agent 能力的混合结果。
+- 不要把外部窗口焦点自动化失败算作 agent 能力失败。若发生误粘贴、焦点错乱、未进入 agent 输入框，应把 transcript 标注为 failed launch / setup failure，并重新用内置终端开始正式轮次。
 
 ## 本地 Coding Agent 评测规范
 
 - 本地验证资产统一放在 `verification/`，该目录被 Git 忽略，不上传 GitHub。
+- 根目录不是评测暂存区。suite/run 之外的临时输出只允许短暂存在于当前操作过程中；回合结束时必须移动到对应 run 的 `artifacts/`、`acceptance/`、`transcripts/`，或作为一次性缓存删除。不要让 `*.png`、`*.log`、`*-transcript.txt`、`.playwright-mcp/`、`.pytest_cache/`、`__pycache__/`、`.tmp*` 停在根目录。
+- 角色边界：
+  - `suite` 是 Codex 设计的标准试卷：题目描述、要求、第一轮 prompt、seed workspace、验收标准。
+  - `run` 是某个被测 agent 的交作业文件夹：该 agent 的 workspace 答卷、每一轮实际收到的 prompt、真实终端 transcript、验收输出、截图和结果记录。
+  - Codex 可以创建和维护 suite/run 骨架，可以按轮给被测 agent 发 prompt，可以在每轮完成后跑验收、试玩、截图、写下一轮修复 prompt 和总结；默认不替被测 agent 写程序、不修改答卷、不把自己生成的代码混进 Astrid / Claude Code 结果。
 - 不同 agent 按目录分开：
   - `verification/suites/<英文-中文测试名>/`
   - `verification/runs/<agent-platform>/<model>/<日期-英文-中文测试名>/`
@@ -150,11 +213,13 @@
   - `verification/runs/codexcli/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`
 - 每个 `verification/suites/<suite>/` 必须尽量包含：
   - `README.md`：题目背景、要测的能力、适合/不适合测什么。
-  - `prompt.md`：第一轮给 agent 的完整 prompt。
+  - `problem.md`：正式题目文档，写清楚题目背景、目标、交付物、限制、自由度和评测方式。不要只用 `prompt.md` 代替题目文档。
+  - `prompt.md`：第一轮给 agent 的完整 prompt，默认中文。
   - `acceptance.md`：交付标准、禁止事项、外部验收命令、通过/失败判定。
-  - `seed-workspace/`：初始工作区。这里的测试、样例和约束文件是标准试卷，不应被 run 反向覆盖。
+  - `seed-workspace/`：初始工作区模板。这里的测试、样例、空项目和约束文件是标准试卷，会复制到每个 run 的 `workspace/`；不应被 run 反向覆盖。
   - `expected-files.md`：可选，说明理想产物应该有哪些文件、入口命令和目录结构。
   - `results-summary.md`：多平台/多模型横向结果摘要，记录每个 run 的第一轮结果、多轮结果和严格判定。
+- suite 目录只放标准试卷材料。不要把某个 agent 的作业、某轮 transcript、验收输出或人工修补记录放进 suite；这些都必须进入对应 `verification/runs/<agent-platform>/<model>/<run>/`。
 - 设计测试题时，先写清楚这道题到底测什么，不要只写“做一个东西”。可以覆盖 coding、TUI、UI、MCP、skills、多 agent、权限、context/memory、steering、长任务恢复等能力。
 - 测试题可以很多元，但必须明确约束强度：
   - **精确规格题**：像刚才贪吃蛇那样，指定窗口尺寸、网格大小、文件结构、测试断言，甚至可以指定 UI 到像素级别。适合比较“能否严格服从验收标准”。
@@ -170,29 +235,41 @@
   - 自由度：哪些必须严格一致，哪些允许 agent 大显神通。
 - 每个 `verification/runs/<agent-platform>/<model>/<run>/` 必须尽量包含：
   - `README.md` 或 `results.md`：本次 run 的配置、命令、结果、失败原因和人工观察。
+  - `evaluation.md`：Codex 对该答卷的评价和 100 分制评分，写清楚评分依据、扣分点、第一轮/最终状态和是否有人工修补。
   - `prompts/round-01.md`、`prompts/round-02.md`：每一轮实际发给 agent 的 prompt，必须是原文，不要只写摘要。
+  - `instructions.md`：给人打开 Codex 桌面内置终端执行的步骤，包括进入哪个 workspace、输入哪个命令、粘贴哪个 prompt、如何保存 transcript。
   - `workspace/`：agent 的直接产物文件夹。所有生成/修改后的代码、文档、测试产物都放这里。
   - `transcripts/` 或 `*-transcript.txt`：每轮终端/模型输出记录。
   - `acceptance/` 或 `pytest-output*.txt`：外部验收命令输出、截图、运行日志、diff 检查结果。
   - `diffs/` 或 `test-diff*.txt`：与 `seed-workspace/` 的关键差异，尤其要记录验收测试是否被改。
   - `artifacts/`：可选，放截图、录屏、构建包等非源码产物。
+- run 目录是交作业文件夹。每轮 Codex 发给被测 agent 的提示词都必须保存为 `prompts/round-XX.md`；每轮结果都必须保存 transcript、验收输出和 `results.md` 记录。Round 02 以后只能基于真实失败输出和试玩问题写修复 prompt，不要悄悄增加新需求。
 - run 目录里的 `workspace/` 是答卷；suite 目录里的 `seed-workspace/` 是试卷。不要混用。
 - 多轮测试必须一轮一个 prompt 文件、一轮一个 transcript。不要只保留最终产物，否则无法判断 agent 是第一轮通过、二轮修复，还是靠改验收测试通过。
+- 浏览器类任务必须尽量有 Codex 内置浏览器验收记录：至少包括打开入口、关键用户操作、控制台错误、桌面或小窗口截图、以及“哪些地方由浏览器自动/辅助判断，哪些地方仍是人工主观评分”。如果是网页设计题，还要记录首屏、响应式、主要 CTA/表单/导航是否可用；如果是小游戏，还要记录开始、移动/输入、反馈、失败/胜利或重开。
+- 每个 run 的 `evaluation.md` 使用 100 分制。默认必须同时评价结果和代价，不能只因“能跑”给高分。推荐默认权重：任务完成度 45、人工体验 20、代码质量和代码规模 15、执行效率和成本 15、证据完整性 5。具体 suite 可以调整，但必须显式写出权重。
+- 执行效率和成本必须进入评分：记录每轮耗时、轮次数、token usage、超时、重试和人工介入。拿不到精确 token usage 时写 `未采集`，并记录 transcript 字节数、max output tokens 配置和轮次数作为成本代理，不能伪造成精确 token。
+- 代码质量和代码规模必须进入评分：记录核心源码行数和字节数。功能简单但代码很长、结构臃肿、重复严重或难维护，应扣分；代码长本身不加分。
+- 人工试玩反馈必须结构化保存。用户说“感觉还行”“很不错”“这里出不来”“炮台转动奇怪”这类模糊评价时，Codex 要整理成 `human-review.md` 或写入 `evaluation.md`：原话摘要、优点、缺点、严重程度、对分数的影响。
+- suite 的 `results-summary.md` 或独立 `comparison.md` 必须横向汇总各 run 的评分、第一轮结果、最终结果、主要优缺点和严格结论。对比时要说明是否同题、同 prompt、同执行方式；不同执行方式的结果不能硬当作同一口径。
 - 如果用户要求试玩或人工修补 run 产物，必须在 `results.md` 标注“人工修补后状态”，不要把它和 agent 原始产物混成同一个结论。
 - 如果用户没有指定对比对象，先询问。推荐顺序：Claude Code 优先，Codex 其次。
-- Claude Code 测试方式：在终端输入 `claude` 运行。当前本机 Claude Code 接入 MiniMax，成本相对低，适合作为默认横向对比对象。
-- Codex 测试方式：使用 Codex 终端/CLI 运行同样任务。Codex 成本更高，只有用户确认需要对比时再跑。
+- Astrid 测试方式：打开 Codex 桌面内置终端，进入对应 run 的 `workspace/`，运行 `astrid` 或项目指定的 Astrid 启动命令，把 `prompts/round-01.md` 原文交给 Astrid。不要默认用 stdin 管道代替真实终端。
+- Claude Code 测试方式：打开 Codex 桌面内置终端，进入对应 run 的 `workspace/`，输入 `claude` 运行。当前本机 Claude Code 接入 MiniMax，成本相对低，适合作为默认横向对比对象。
+- Codex 被测方式：只有用户确认要把 Codex 也作为被测 agent 时，才使用 Codex 终端/CLI 在同一 workspace 执行同样 prompt。Codex 成本更高；不要把当前 Codex 出题/验收会话算作 Codex 被测结果。
+- Codex 客户端参考答卷方式：如果用户明确要求“当前 Codex 客户端/ChatGPT 也写一版”，可以把当前会话作为 `codex-client` 平台记录，但它仍然是一个正式 run：每一轮用户反馈或修复要求都要原文保存到 `prompts/round-XX.md`，每轮修复原因和验收结果写入 `results.md`，suite 汇总必须区分“自动底线通过”和“人工试玩后多轮修复通过”。
 - 每次测试目录应包含：
   - `prompts/`：保存实际输入给 agent 的 prompt，不能只写摘要。
   - `workspace/`：隔离任务工作区和 agent 修改后的产物。
-  - `run_eval.*`：评测脚本或启动命令。
+  - `instructions.md` 或 `run_eval.*`：Codex 桌面内置终端执行说明；`run_eval.*` 只能做目录准备、验收、记录，不应默认替被测 agent 完成编程任务。
   - `*-transcript.txt`：终端/模型输出记录。
   - `results.*` 或 notes：记录 pass/fail、失败原因、二轮修复情况、验收命令输出。
 - 当前 Astrid 真实模型编程能力评测在：`verification/runs/astrid/minimax2.7/2026-04-29-coding-basic-编程基础/`。
 - 当前 Astrid vs Claude Code 贪吃蛇对比评测在：`verification/runs/astrid/minimax2.7/2026-04-29-snake-贪吃蛇/` 和 `verification/runs/claudecode/minimax2.7/2026-04-29-snake-贪吃蛇/`。
 - 当前 Codex 客户端 GPT-5.5 medium 参考产物在：`verification/runs/codex-client/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`。它是 Codex 客户端生成/整理的参考答案，不等同于 Codex CLI 自主运行。
 - 贪吃蛇这一轮的记录口径：Astrid 第一轮严格失败；二轮后 pytest 可过，但改写了验收测试，所以严格结果仍是失败。Claude Code 第一轮被预算截断，二轮后保留原验收测试并通过。
-- 用 stdin 管道测试 Astrid 时要注意：这是 non-TTY 模式，写文件/改文件不会弹权限确认。除非临时把目标文件加入 `~/.astrid/permissions.json` 的 `allowedEditPatterns`，否则写入会失败。
+- 用 stdin 管道测试 Astrid 只适用于“非 TTY/eval 模式”专项，不适用于默认真实编程能力横向对比。非 TTY 模式写文件/改文件不会弹权限确认；除非临时把目标文件加入 `~/.astrid/permissions.json` 的 `allowedEditPatterns`，否则写入会失败。
+- 如果必须临时写 `~/.astrid/permissions.json`，必须使用 UTF-8 no BOM。PowerShell `Set-Content -Encoding UTF8` 在部分环境会写 BOM，Astrid 当前权限读取可能把它当 corrupted JSON；优先用明确的 no-BOM 写入脚本，并在结果中记录。
 - 临时预授权必须测试后恢复。原来没有 `permissions.json` 就删回不存在；原来有文件就恢复原始内容。
 - 判断 coding ability 不要只看 assistant 文本。必须在 agent 之外跑 pytest 或验收脚本，并记录真实 pass/fail 输出。
 

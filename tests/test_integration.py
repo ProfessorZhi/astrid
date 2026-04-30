@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from astrid.agent_loop import run_agent_turn
 from astrid.mock_model import MockModelAdapter
 from astrid.permissions import PermissionManager
+from astrid.skills import install_skill
 from astrid.tooling import ToolContext, ToolRegistry, ToolDefinition, ToolResult
 from astrid.tools import create_default_tool_registry
 from astrid.types import AgentStep, ChatMessage
@@ -103,9 +104,13 @@ def system_messages(tmp_workspace: Path, auto_allow_permissions: PermissionManag
 
 
 def test_system_prompt_exposes_project_skills_and_connected_mcp(tmp_path: Path, monkeypatch) -> None:
-    project_skill = tmp_path / ".astrid" / "skills" / "demo" / "SKILL.md"
-    project_skill.parent.mkdir(parents=True)
-    project_skill.write_text("# Demo\n\nProject description\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setenv("ASTRID_SKILLS_ROOT", str(tmp_path / "astrid-skills"))
+    source_skill = tmp_path / "source-skill"
+    source_skill.mkdir()
+    (source_skill / "SKILL.md").write_text("# Demo\n\nProject description\n", encoding="utf-8")
+    install_skill(tmp_path, str(source_skill), name="demo", scope="project")
     server_script = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
 
     monkeypatch.setenv("ANTHROPIC_MODEL", "MiniMax-M2.7")

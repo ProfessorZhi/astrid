@@ -111,11 +111,13 @@ def _is_dumb_terminal() -> bool:
 def _should_use_alternate_screen() -> bool:
     """Return True when the dedicated alt buffer should be used.
 
-    The alternate buffer belongs to the explicit TUI mode. On Windows the
-    default stays in native scrollback because embedded terminals such as Codex
-    and Windows Terminal should keep wheel scrolling and selection as host
-    behavior unless the user opts into Astrid's full-screen UI.
+    ``tui`` owns the terminal.  We intentionally do not support the old
+    ``ASTRID_TERMINAL_MODE=tui`` + ``ASTRID_ALT_SCREEN=0`` hybrid because it
+    mixes raw input and rich rendering with native scrollback, which corrupts
+    prompts in hosted terminals.
     """
+    if _terminal_mode() == "tui":
+        return True
     override = os.environ.get("ASTRID_ALT_SCREEN")
     if override is not None:
         normalized = override.strip().lower()
@@ -123,7 +125,7 @@ def _should_use_alternate_screen() -> bool:
             return True
         if normalized in {"0", "false", "no", "off"}:
             return False
-    return _terminal_mode() == "tui"
+    return False
 
 
 def _is_codex_embedded_terminal() -> bool:
@@ -139,7 +141,7 @@ def _terminal_mode() -> str:
         return "tui"
     mode = raw_mode.strip().lower()
     if mode == "agent":
-        return "tui"
+        return "shell"
     return mode if mode in {"tui", "shell"} else "tui"
 
 
@@ -152,7 +154,10 @@ def _is_mouse_tracking_enabled() -> bool:
         if normalized in {"0", "false", "no", "off"}:
             return False
     if sys.platform == "win32":
-        return False
+        # Full-screen TUI needs mouse capture on Windows/hosted terminals;
+        # otherwise wheel input is commonly rewritten as Up/Down keys and
+        # accidentally navigates prompt history instead of scrolling.
+        return True
     return True
 
 

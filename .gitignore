@@ -38,6 +38,7 @@ Thumbs.db
 
 # Local AI collaboration artifacts
 .superpowers/
+.playwright-mcp/
 
 # Local-only Astrid runtime and documentation artifacts
 docs-local/
@@ -47,6 +48,7 @@ docs-local/
 .astrid-memory/
 .workbuddy/
 .lingma/
+verification/
 verification-smoke-transcript.txt
 
 # Learning materials (not for public sharing)

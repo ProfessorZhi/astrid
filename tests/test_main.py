@@ -41,6 +41,12 @@ class _DummyPermissions:
     def ensure_path_access(self, path: str, intent: str) -> None:
         return None
 
+    def begin_turn(self) -> None:
+        return None
+
+    def end_turn(self) -> None:
+        return None
+
 
 class _DummyMemory:
     def __init__(self, *args, **kwargs) -> None:
@@ -91,7 +97,7 @@ def _patch_main_runtime(monkeypatch) -> dict[str, object]:
     monkeypatch.setattr("astrid.logging_config.setup_logging", lambda level="WARNING": None)
     monkeypatch.setattr("astrid.logging_config.get_logger", lambda name="main": _DummyLogger())
     monkeypatch.setattr("astrid.memory.MemoryManager", _DummyMemory)
-    monkeypatch.setattr("astrid.advanced_memory.create_memory_integration", lambda: _DummyAdvancedMemory())
+    monkeypatch.setattr("astrid.advanced_memory.create_memory_integration", lambda *args, **kwargs: _DummyAdvancedMemory())
     monkeypatch.setattr("astrid.skill_engine.create_default_skill_engine", lambda memory: object())
     monkeypatch.setattr("astrid.terminology_governance.create_terminology_governance_system", lambda memory: object())
     monkeypatch.setattr("astrid.bootstrap_system.create_bootstrap_system", lambda *args, **kwargs: _DummyBootstrap())
@@ -124,8 +130,8 @@ def test_main_skips_legacy_intro_for_tty_mode(monkeypatch, capsys, tmp_path) -> 
     main_mod.main()
 
     captured = capsys.readouterr()
-    assert calls["tty_calls"] == 1
-    assert calls["shell_calls"] == 0
+    assert calls["tty_calls"] == 0
+    assert calls["shell_calls"] == 1
     assert "Quick Start Guide" not in captured.out
     assert "minimal Astrid shell" not in captured.out
     assert "Astrid - Your Terminal Coding Assistant" not in captured.out
@@ -204,6 +210,47 @@ def test_normalize_cli_input_strips_bom_and_nul() -> None:
     assert main_mod._normalize_cli_input("锘?/history\n") == "/history"
 
 
+def test_handle_cli_input_streams_tool_events(monkeypatch, capsys, tmp_path) -> None:
+    transcript: list[TranscriptEntry] = []
+    messages = [{"role": "system", "content": "system"}]
+
+    class _Tools(_DummyTools):
+        def refresh_capabilities(self) -> None:
+            return None
+
+    def _fake_run_agent_turn(**kwargs):
+        kwargs["on_progress_message"]("Planning the next step")
+        kwargs["on_tool_start"]("write_file", {"path": "index.html", "content": "<html>"})
+        kwargs["on_tool_result"]("write_file", "wrote index.html", False)
+        return [*kwargs["messages"], {"role": "assistant", "content": "done"}]
+
+    monkeypatch.setattr(main_mod, "run_agent_turn", _fake_run_agent_turn)
+    monkeypatch.setattr(main_mod, "build_system_prompt", lambda *args, **kwargs: "system")
+    monkeypatch.setattr(main_mod, "save_history_entries", lambda history, cwd: None)
+
+    next_messages = main_mod._handle_cli_input(
+        user_input="build it",
+        cwd=str(tmp_path),
+        permissions=_DummyPermissions(str(tmp_path)),
+        transcript=transcript,
+        tools=_Tools(),
+        messages=messages,
+        history=[],
+        model=object(),
+        max_tool_steps=25,
+        advanced_memory_mgr=_DummyAdvancedMemory(),
+        context_mgr=None,
+        logger=_DummyLogger(),
+    )
+
+    captured = capsys.readouterr()
+    assert next_messages is not None
+    assert "[progress] Planning the next step" in captured.out
+    assert "[tool:start] write_file" in captured.out
+    assert "[tool:success] write_file" in captured.out
+    assert any(entry.kind == "tool" and entry.toolName == "write_file" for entry in transcript)
+
+
 def test_apply_terminal_mode_enables_shell_scrollback() -> None:
     main_mod._apply_terminal_mode("shell")
 
@@ -211,14 +258,14 @@ def test_apply_terminal_mode_enables_shell_scrollback() -> None:
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
-def test_apply_terminal_mode_treats_agent_as_tui_alias(monkeypatch) -> None:
+def test_apply_terminal_mode_uses_native_scrollback_for_agent_default(monkeypatch) -> None:
     monkeypatch.delenv("ASTRID_TERMINAL_MODE", raising=False)
     monkeypatch.delenv("ASTRID_ALT_SCREEN", raising=False)
 
     main_mod._apply_terminal_mode("agent")
 
-    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "tui"
-    assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "1"
+    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "shell"
+    assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
 def test_apply_terminal_mode_enables_fullscreen_tui(monkeypatch) -> None:
@@ -231,10 +278,10 @@ def test_apply_terminal_mode_enables_fullscreen_tui(monkeypatch) -> None:
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "1"
 
 
-def test_resolve_terminal_mode_defaults_to_native_shell_on_windows(monkeypatch) -> None:
+def test_resolve_terminal_mode_defaults_to_agent_on_windows(monkeypatch) -> None:
     monkeypatch.setattr(main_mod.sys, "platform", "win32")
 
-    assert main_mod._resolve_terminal_mode(shell_flag=False, tui_flag=False) == "shell"
+    assert main_mod._resolve_terminal_mode(shell_flag=False, tui_flag=False) == "agent"
 
 
 def test_resolve_terminal_mode_allows_explicit_tui_override(monkeypatch) -> None:
@@ -268,7 +315,7 @@ def test_main_shell_flag_sets_shell_terminal_mode(monkeypatch, tmp_path) -> None
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
-def test_main_defaults_to_native_tty_mode_on_windows(monkeypatch, tmp_path) -> None:
+def test_main_defaults_to_native_scrollback_mode_on_windows(monkeypatch, tmp_path) -> None:
     calls = _patch_main_runtime(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(main_mod.sys, "argv", ["astrid"])
@@ -279,8 +326,8 @@ def test_main_defaults_to_native_tty_mode_on_windows(monkeypatch, tmp_path) -> N
 
     main_mod.main()
 
-    assert calls["tty_calls"] == 1
-    assert calls["shell_calls"] == 0
+    assert calls["tty_calls"] == 0
+    assert calls["shell_calls"] == 1
     assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "shell"
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
@@ -336,6 +383,7 @@ def test_run_shell_repl_prints_intro_and_stops_on_exit(monkeypatch, capsys) -> N
         messages=[{"role": "system", "content": "system"}],
         history=history,
         model=object(),
+        max_tool_steps=25,
         advanced_memory_mgr=_DummyAdvancedMemory(),
         context_mgr=None,
         logger=_DummyLogger(),

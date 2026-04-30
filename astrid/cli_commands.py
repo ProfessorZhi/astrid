@@ -7,7 +7,6 @@ from astrid.config import (
     ASTRID_MCP_PATH,
     ASTRID_PERMISSIONS_PATH,
     ASTRID_SETTINGS_PATH,
-    CLAUDE_SETTINGS_PATH,
     load_runtime_config,
     save_mini_code_settings,
 )
@@ -42,7 +41,7 @@ SLASH_COMMANDS = [
     SlashCommand("/transcript-save", "/transcript-save <path>", "Save the current session transcript to a text file."),
     SlashCommand("/model", "/model", "Show the current model."),
     SlashCommand("/model", "/model <model-name>", "Persist a model override into ~/.astrid/settings.json."),
-    SlashCommand("/config-paths", "/config-paths", "Show astrid and Claude fallback settings paths."),
+    SlashCommand("/config-paths", "/config-paths", "Show Astrid settings paths."),
     SlashCommand("/mcp", "/mcp", "Show configured MCP servers and connection state."),
     SlashCommand("/permissions", "/permissions", "Show astrid permission storage path."),
     SlashCommand("/pet", "/pet list", "List available buddy species."),
@@ -156,7 +155,6 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
                 f"astrid settings: {ASTRID_SETTINGS_PATH}",
                 f"astrid permissions: {ASTRID_PERMISSIONS_PATH}",
                 f"astrid mcp: {ASTRID_MCP_PATH}",
-                f"compat fallback: {CLAUDE_SETTINGS_PATH}",
             ]
         )
 
@@ -174,8 +172,7 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
             return (
                 "No skills discovered. "
                 f"Add skills under {_external_skills_root()}\\<name>\\SKILL.md, "
-                ".astrid/skills/<name>/SKILL.md, .claude/skills/<name>/SKILL.md, "
-                "or ~/.claude/skills/<name>/SKILL.md."
+                "or .astrid/skills/<name>/SKILL.md."
             )
         return "\n".join(
             f"{skill['name']}  {skill['description']}  [{skill['source']}]"
@@ -206,6 +203,16 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
 
     if user_input == "/memory":
         lines = ["Memory System Status", "=" * 50, ""]
+        try:
+            from astrid.memory import memories_root, workspace_id
+
+            cwd = Path.cwd()
+            lines.append(f"Memory root: {memories_root()}")
+            lines.append(f"Workspace id: {workspace_id(cwd)}")
+            lines.append("")
+        except Exception as e:
+            lines.append(f"Memory path error: {e}")
+            lines.append("")
         try:
             from astrid.tools.advanced_memory_tools import _advanced_memory_mgr
 

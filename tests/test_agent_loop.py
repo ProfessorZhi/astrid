@@ -4,13 +4,15 @@ from astrid.types import AgentStep, ChatMessage, ModelAdapter, StepDiagnostics
 
 
 class ScriptedModel(ModelAdapter):
-    def __init__(self, steps: list[AgentStep]) -> None:
+    def __init__(self, steps: list[AgentStep | BaseException]) -> None:
         self._steps = steps
         self.calls = 0
 
     def next(self, messages: list[ChatMessage]) -> AgentStep:
         step = self._steps[self.calls]
         self.calls += 1
+        if isinstance(step, BaseException):
+            raise step
         return step
 
 
@@ -176,6 +178,79 @@ def test_agent_turn_emits_adapting_progress_after_tool_result() -> None:
     assert "Planning the next step" in progress_events
     assert "Received result from echo" in progress_events
     assert "Adapting after the latest tool result" in progress_events
+
+
+def test_agent_turn_recovers_from_timeout_after_file_write(tmp_path) -> None:
+    def run_write_file(input_data: dict, _context) -> ToolResult:
+        target = tmp_path / input_data["path"]
+        target.write_text(input_data["content"], encoding="utf-8")
+        return ToolResult(ok=True, output=f"wrote:{target.name}")
+
+    registry = ToolRegistry(
+        [
+            ToolDefinition(
+                name="write_file",
+                description="write file tool",
+                input_schema={"type": "object"},
+                validator=lambda value: value,
+                run=run_write_file,
+            )
+        ]
+    )
+    model = ScriptedModel(
+        [
+            AgentStep(
+                type="tool_calls",
+                calls=[{"id": "1", "toolName": "write_file", "input": {"path": "index.html", "content": "partial"}}],
+            ),
+            TimeoutError("read operation timed out"),
+            AgentStep(type="assistant", content="done"),
+        ]
+    )
+    progress_events: list[str] = []
+
+    messages = run_agent_turn(
+        model=model,
+        tools=registry,
+        messages=[{"role": "system", "content": "sys"}],
+        cwd=".",
+        on_progress_message=progress_events.append,
+    )
+
+    assert messages[-1] == {"role": "assistant", "content": "done"}
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == "partial"
+    assert model.calls == 3
+    assert any("timeout" in message["content"].lower() for message in messages if message["role"] == "assistant_progress")
+    assert any("timeout" in event.lower() for event in progress_events)
+    assert any("Tool duration: write_file elapsed_seconds=" in event for event in progress_events)
+
+
+def test_agent_turn_emits_model_usage_progress() -> None:
+    model = ScriptedModel(
+        [
+            AgentStep(
+                type="assistant",
+                content="done",
+                diagnostics=StepDiagnostics(inputTokens=10, outputTokens=5),
+            )
+        ]
+    )
+    progress_events: list[str] = []
+
+    messages = run_agent_turn(
+        model=model,
+        tools=ToolRegistry([]),
+        messages=[{"role": "system", "content": "sys"}],
+        cwd=".",
+        on_progress_message=progress_events.append,
+    )
+
+    assert messages[-1] == {"role": "assistant", "content": "done"}
+    assert "Model usage: input_tokens=10 output_tokens=5 total_tokens=15" in progress_events
+    assert any(
+        message["role"] == "assistant_progress" and "total_tokens=15" in message["content"]
+        for message in messages
+    )
 
 
 def test_agent_turn_returns_fallback_after_repeated_empty_responses() -> None:

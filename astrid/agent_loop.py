@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Callable
 
 from astrid.context_manager import ContextManager, estimate_message_tokens
@@ -160,6 +161,12 @@ RESUME_AFTER_MAX_TOKENS = (
     "code change, or an explicit <final> answer only if the task is complete."
 )
 
+RESUME_AFTER_TIMEOUT = (
+    "The previous model request timed out after tool execution. Inspect the latest tool "
+    "results and workspace state, then continue with the next concrete tool call, code "
+    "change, or an explicit <final> answer only if the task is complete."
+)
+
 
 def _is_empty_assistant_response(content: str) -> bool:
     return len(content.strip()) == 0
@@ -174,6 +181,17 @@ def _format_diagnostics(stop_reason: str | None, block_types: list[str] | None, 
     if ignored_block_types:
         parts.append(f"ignored={','.join(ignored_block_types)}")
     return f" Diagnostics: {'; '.join(parts)}." if parts else ""
+
+
+def _format_usage_progress(diagnostics) -> str | None:
+    if not diagnostics:
+        return None
+    input_tokens = getattr(diagnostics, "inputTokens", None)
+    output_tokens = getattr(diagnostics, "outputTokens", None)
+    if input_tokens is None and output_tokens is None:
+        return None
+    total = (input_tokens or 0) + (output_tokens or 0)
+    return f"Model usage: input_tokens={input_tokens if input_tokens is not None else 'unknown'} output_tokens={output_tokens if output_tokens is not None else 'unknown'} total_tokens={total}"
 
 
 def _is_recoverable_thinking_stop(*, is_empty: bool, stop_reason: str | None, ignored_block_types: list[str] | None) -> bool:
@@ -213,6 +231,7 @@ def run_agent_turn(
     saw_tool_result = False
     empty_response_retry_count = 0
     recoverable_thinking_retry_count = 0
+    recoverable_timeout_retry_count = 0
     tool_error_count = 0
     step = 0
 
@@ -232,6 +251,7 @@ def run_agent_turn(
             saw_tool_result=saw_tool_result,
             empty_response_retry_count=empty_response_retry_count,
             recoverable_thinking_retry_count=recoverable_thinking_retry_count,
+            recoverable_timeout_retry_count=recoverable_timeout_retry_count,
             tool_error_count=tool_error_count,
             step=step,
         )
@@ -264,6 +284,7 @@ def _run_agent_turn_impl(
     saw_tool_result: bool = False,
     empty_response_retry_count: int = 0,
     recoverable_thinking_retry_count: int = 0,
+    recoverable_timeout_retry_count: int = 0,
     tool_error_count: int = 0,
     step: int = 0,
 ) -> list[ChatMessage]:
@@ -305,6 +326,15 @@ def _run_agent_turn_impl(
             current_messages.append({"role": "assistant", "content": fallback})
             return current_messages
         except TimeoutError as error:
+            if saw_tool_result and recoverable_timeout_retry_count < 2:
+                recoverable_timeout_retry_count += 1
+                progress_content = f"Model API timeout after tool execution; requesting continuation. ({error})"
+                logger.warning("Recovering from model timeout after tool execution: %s", error)
+                if on_progress_message:
+                    on_progress_message(progress_content)
+                current_messages.append({"role": "assistant_progress", "content": progress_content})
+                current_messages.append({"role": "user", "content": RESUME_AFTER_TIMEOUT})
+                continue
             fallback = f"Model API timeout: {error}"
             logger.error("Model API timeout: %s", error)
             if on_assistant_message:
@@ -344,6 +374,11 @@ def _run_agent_turn_impl(
                 continue
 
             diagnostics = next_step.diagnostics
+            usage_progress = _format_usage_progress(diagnostics)
+            if usage_progress:
+                if on_progress_message:
+                    on_progress_message(usage_progress)
+                current_messages.append({"role": "assistant_progress", "content": usage_progress})
 
             if _is_recoverable_thinking_stop(
                 is_empty=is_empty,
@@ -433,13 +468,19 @@ def _run_agent_turn_impl(
         for call in next_step.calls:
             if on_tool_start:
                 on_tool_start(call["toolName"], call["input"])
+            tool_started_at = time.perf_counter()
             result = tools.execute(
                 call["toolName"],
                 call["input"],
                 ToolContext(cwd=cwd, permissions=permissions),
             )
+            tool_elapsed_seconds = time.perf_counter() - tool_started_at
             if on_tool_result:
                 on_tool_result(call["toolName"], result.output, not result.ok)
+            if on_progress_message:
+                on_progress_message(
+                    f"Tool duration: {call['toolName']} elapsed_seconds={tool_elapsed_seconds:.3f}"
+                )
             saw_tool_result = True
             if not result.ok:
                 tool_error_count += 1

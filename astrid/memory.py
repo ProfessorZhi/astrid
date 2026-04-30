@@ -11,7 +11,9 @@ context about past decisions, codebase patterns, and project conventions.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -19,6 +21,55 @@ from pathlib import Path
 from typing import Any
 
 from astrid.config import ASTRID_DIR
+
+
+def memories_root() -> Path:
+    """Return the unified Astrid memories root."""
+    override = os.environ.get("ASTRID_MEMORIES_ROOT")
+    if override:
+        return Path(override).expanduser()
+    return ASTRID_DIR / "memories"
+
+
+def _normalize_workspace_path(workspace: str | Path) -> str:
+    try:
+        normalized = str(Path(workspace).expanduser().resolve())
+    except OSError:
+        normalized = str(Path(workspace).expanduser())
+    return normalized.lower() if os.name == "nt" else normalized
+
+
+def workspace_id(workspace: str | Path) -> str:
+    """Return a stable short id for a workspace path."""
+    digest = hashlib.sha256(_normalize_workspace_path(workspace).encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+def _backup_path(path: Path) -> Path:
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    candidate = path.with_name(f"{path.name}.backup-{timestamp}")
+    suffix = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.backup-{timestamp}-{suffix}")
+        suffix += 1
+    return candidate
+
+
+def backup_legacy_memory_dir(path: Path) -> Path | None:
+    """Rename a legacy project memory directory after all known payloads moved."""
+    if not path.exists():
+        return None
+    if not path.is_dir():
+        raise RuntimeError(f"Legacy memory path is not a directory: {path}")
+    try:
+        if not any(path.iterdir()):
+            path.rmdir()
+            return None
+        backup = _backup_path(path)
+        path.rename(backup)
+        return backup
+    except OSError as exc:
+        raise RuntimeError(f"Failed to back up legacy memory directory {path}: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +94,9 @@ class MemoryEntry:
     updated_at: float = field(default_factory=time.time)
     tags: list[str] = field(default_factory=list)
     usage_count: int = 0  # How often this was referenced
+    workspace: str = ""
+    workspace_id: str = ""
+    source_path: str = ""
     
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -55,6 +109,9 @@ class MemoryEntry:
             "updated_at": self.updated_at,
             "tags": self.tags,
             "usage_count": self.usage_count,
+            "workspace": self.workspace,
+            "workspace_id": self.workspace_id,
+            "source_path": self.source_path,
         }
     
     @classmethod
@@ -69,6 +126,9 @@ class MemoryEntry:
             updated_at=data.get("updated_at", time.time()),
             tags=data.get("tags", []),
             usage_count=data.get("usage_count", 0),
+            workspace=data.get("workspace", ""),
+            workspace_id=data.get("workspace_id", ""),
+            source_path=data.get("source_path", ""),
         )
 
 
@@ -175,16 +235,22 @@ class MemoryPaths:
     user_memory: Path
     project_memory: Path
     local_memory: Path
+    root: Path
+    workspace_id: str
     
     @classmethod
     def for_workspace(cls, workspace: str) -> "MemoryPaths":
         """Create memory paths for a workspace."""
-        workspace_path = Path(workspace)
+        root = memories_root()
+        wid = workspace_id(workspace)
+        project_root = root / "projects" / wid
         
         return cls(
-            user_memory=ASTRID_DIR / "memory",
-            project_memory=workspace_path / ".astrid-memory",
-            local_memory=workspace_path / ".astrid-memory-local",
+            user_memory=root,
+            project_memory=project_root,
+            local_memory=project_root / "local",
+            root=root,
+            workspace_id=wid,
         )
 
 
@@ -209,6 +275,7 @@ class MemoryManager:
             MemoryScope.PROJECT: MemoryFile(scope=MemoryScope.PROJECT),
             MemoryScope.LOCAL: MemoryFile(scope=MemoryScope.LOCAL),
         }
+        self._migrate_legacy_project_memories()
         self._load_all()
     
     def _load_all(self) -> None:
@@ -278,6 +345,92 @@ class MemoryManager:
                     tags=tags,
                 )
                 self.memories[scope].entries.append(entry)
+
+    def _read_basic_entries(self, path: Path, scope: MemoryScope) -> list[MemoryEntry]:
+        entries: list[MemoryEntry] = []
+        memory_json = path / "memory.json"
+        memory_md = path / "MEMORY.md"
+
+        if memory_json.exists():
+            try:
+                data = json.loads(memory_json.read_text(encoding="utf-8"))
+                for entry_data in data.get("entries", []):
+                    entries.append(MemoryEntry.from_dict(entry_data))
+                return entries
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise RuntimeError(f"Failed to migrate legacy memory file {memory_json}: {exc}") from exc
+
+        if memory_md.exists():
+            temp = MemoryFile(scope=scope)
+            original = self.memories[scope]
+            self.memories[scope] = temp
+            try:
+                self._parse_memory_md(memory_md.read_text(encoding="utf-8"), scope)
+                entries = list(self.memories[scope].entries)
+            finally:
+                self.memories[scope] = original
+
+        return entries
+
+    def _merge_legacy_entries(self, source_path: Path, scope: MemoryScope) -> bool:
+        entries = self._read_basic_entries(source_path, scope)
+        if not entries:
+            return False
+
+        target_path = self._get_scope_path(scope)
+        target_path.mkdir(parents=True, exist_ok=True)
+        target_entries = self._read_basic_entries(target_path, scope)
+        existing_ids = {entry.id for entry in target_entries}
+        changed = False
+
+        for entry in entries:
+            if entry.id in existing_ids:
+                continue
+            entry.scope = scope
+            if scope != MemoryScope.USER:
+                entry.workspace = self.workspace
+                entry.workspace_id = self.paths.workspace_id
+            if not entry.source_path:
+                entry.source_path = str(source_path)
+            target_entries.append(entry)
+            existing_ids.add(entry.id)
+            changed = True
+
+        if changed:
+            target_memory = MemoryFile(scope=scope, entries=target_entries)
+            data = {
+                "scope": scope.value,
+                "last_updated": time.time(),
+                "entries": [entry.to_dict() for entry in target_memory.entries],
+            }
+            (target_path / "memory.json").write_text(
+                json.dumps(data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (target_path / "MEMORY.md").write_text(
+                target_memory.format_as_markdown(),
+                encoding="utf-8",
+            )
+
+        return True
+
+    def _migrate_legacy_project_memories(self) -> None:
+        workspace_path = Path(self.workspace)
+        legacy_targets = [
+            (workspace_path / ".astrid-memory", MemoryScope.PROJECT),
+            (workspace_path / ".astrid-memory-local", MemoryScope.LOCAL),
+        ]
+
+        for legacy_path, scope in legacy_targets:
+            if not legacy_path.exists():
+                continue
+            if not legacy_path.is_dir():
+                raise RuntimeError(f"Legacy memory path is not a directory: {legacy_path}")
+
+            migrated_basic = self._merge_legacy_entries(legacy_path, scope)
+            has_advanced_payload = (legacy_path / "advanced_memory.json").exists()
+            if migrated_basic and not has_advanced_payload:
+                backup_legacy_memory_dir(legacy_path)
     
     def _get_scope_path(self, scope: MemoryScope) -> Path:
         """Get path for memory scope."""
@@ -310,6 +463,8 @@ class MemoryManager:
             category=category,
             content=content,
             tags=tags or [],
+            workspace=self.workspace if scope != MemoryScope.USER else "",
+            workspace_id=self.paths.workspace_id if scope != MemoryScope.USER else "",
         )
         
         self.memories[scope].add_entry(entry)

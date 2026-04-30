@@ -35,7 +35,12 @@ class WheelEvent:
     direction: Literal['up', 'down']
     kind: str = "wheel"
 
-ParsedInputEvent = Union[KeyEvent, TextEvent, WheelEvent]
+@dataclass(frozen=True)
+class PasteEvent:
+    text: str
+    kind: str = "paste"
+
+ParsedInputEvent = Union[KeyEvent, TextEvent, WheelEvent, PasteEvent]
 
 @dataclass(frozen=True)
 class ParseResult:
@@ -175,8 +180,22 @@ def parse_escape_sequence(chunk: str) -> tuple[ParsedInputEvent | None, int]:
 
 def parse_input_chunk(chunk: str) -> ParseResult:
     events: list[ParsedInputEvent] = []
+    if _looks_like_raw_multiline_paste(chunk):
+        return ParseResult(
+            events=[PasteEvent(text=chunk.replace('\r\n', '\n').replace('\r', '\n'))],
+            rest="",
+        )
     i = 0
     while i < len(chunk):
+        if chunk.startswith('\x1b[200~', i):
+            paste_start = i + len('\x1b[200~')
+            paste_end = chunk.find('\x1b[201~', paste_start)
+            if paste_end < 0:
+                break
+            events.append(PasteEvent(text=chunk[paste_start:paste_end]))
+            i = paste_end + len('\x1b[201~')
+            continue
+
         if maybe_need_more_for_escape_sequence(chunk[i:]):
             break
 
@@ -229,3 +248,17 @@ def parse_input_chunk(chunk: str) -> ParseResult:
         i += 1
 
     return ParseResult(events=events, rest=chunk[i:])
+
+
+def _looks_like_raw_multiline_paste(chunk: str) -> bool:
+    if chunk.startswith('\x1b[200~') or '\x1b[200~' in chunk:
+        return False
+    if '\n' not in chunk and '\r' not in chunk:
+        return False
+    normalized = chunk.replace('\r\n', '\n').replace('\r', '\n')
+    if normalized in {'\n', ''}:
+        return False
+    lines = normalized.split('\n')
+    if len(lines) <= 2 and lines[-1] == "":
+        return False
+    return any(ch not in {'\n', '\t', ' '} and not ('\x00' <= ch <= '\x1f') for ch in normalized)

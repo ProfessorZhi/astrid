@@ -3,6 +3,7 @@ from pathlib import Path
 from astrid.cli_commands import find_matching_slash_commands, format_slash_commands, try_handle_local_command
 from astrid import cli_commands as cli_commands_mod
 from astrid.local_tool_shortcuts import parse_local_tool_shortcut
+from astrid.skills import install_skill
 from astrid.tooling import ToolCatalog, ToolRegistry
 from astrid.tools import create_default_tool_registry
 
@@ -53,10 +54,17 @@ def test_format_slash_commands_includes_history_and_retry() -> None:
     assert "Available Commands" in commands
 
 
-def test_try_handle_local_command_executes_named_skill_from_workspace(tmp_path: Path) -> None:
-    skill_file = tmp_path / ".astrid" / "skills" / "demo" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text("# Demo\n\nProject skill description\n\nUse this workflow.\n", encoding="utf-8")
+def test_try_handle_local_command_executes_named_skill_from_workspace(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setenv("ASTRID_SKILLS_ROOT", str(tmp_path / "astrid-skills"))
+    source_skill = tmp_path / "source-skill"
+    source_skill.mkdir()
+    (source_skill / "SKILL.md").write_text(
+        "# Demo\n\nProject skill description\n\nUse this workflow.\n",
+        encoding="utf-8",
+    )
+    install_skill(tmp_path, str(source_skill), name="demo", scope="project")
 
     tools = create_default_tool_registry(str(tmp_path), runtime=None)
     try:
@@ -70,11 +78,15 @@ def test_try_handle_local_command_executes_named_skill_from_workspace(tmp_path: 
     assert "Use this workflow." in result
 
 
-def test_try_handle_local_command_refreshes_newly_added_skill_listing(tmp_path: Path) -> None:
+def test_try_handle_local_command_refreshes_newly_added_skill_listing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setenv("ASTRID_SKILLS_ROOT", str(tmp_path / "astrid-skills"))
     tools = create_default_tool_registry(str(tmp_path), runtime=None)
-    skill_file = tmp_path / ".astrid" / "skills" / "late" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text("# Late\n\nLate-loaded skill\n", encoding="utf-8")
+    source_skill = tmp_path / "late-source"
+    source_skill.mkdir()
+    (source_skill / "SKILL.md").write_text("# Late\n\nLate-loaded skill\n", encoding="utf-8")
+    install_skill(tmp_path, str(source_skill), name="late", scope="project")
     try:
         result = try_handle_local_command("/skills", tools=tools)
     finally:

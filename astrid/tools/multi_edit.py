@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+
+from astrid.file_review import apply_reviewed_file_change
 from astrid.tooling import ToolDefinition, ToolResult
+from astrid.workspace import resolve_tool_path
 
 
 def _validate(input_data: dict) -> dict:
@@ -39,7 +42,16 @@ def _run(input_data: dict, context) -> ToolResult:
     total_changes = 0
 
     for i, change in enumerate(changes):
-        file_path = cwd / change["file"]
+        try:
+            file_path = Path(resolve_tool_path(context, change["file"], "write"))
+        except Exception as e:
+            results.append({
+                "file": change["file"],
+                "status": "error",
+                "message": f"Path error: {e}",
+            })
+            error_count += 1
+            continue
         old_text = change["old"]
         new_text = change["new"]
 
@@ -91,7 +103,15 @@ def _run(input_data: dict, context) -> ToolResult:
         new_content = content.replace(old_text, new_text)
 
         try:
-            file_path.write_text(new_content, encoding="utf-8")
+            reviewed = apply_reviewed_file_change(context, change["file"], file_path, new_content)
+            if not reviewed.ok:
+                results.append({
+                    "file": change["file"],
+                    "status": "error",
+                    "message": reviewed.output,
+                })
+                error_count += 1
+                continue
             results.append({
                 "file": change["file"],
                 "status": "success",

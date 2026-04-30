@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from astrid.project_instructions import format_project_instructions, load_project_instructions
+
 
 # ---------------------------------------------------------------------------
 # Context collector
@@ -35,7 +37,7 @@ class AsyncContextCollector:
     
     Inspired by Claude Code's memoized async context providers:
     - getSystemContext() - git status, system info
-    - getUserContext() - CLAUDE.md, user preferences
+    - getUserContext() - project instructions, user preferences
     
     Parallelizes expensive I/O and provides cache invalidation.
     """
@@ -92,21 +94,20 @@ class AsyncContextCollector:
         return result
     
     async def get_user_context(self) -> dict[str, str]:
-        """Get user context (CLAUDE.md, preferences) with caching."""
+        """Get user context (project instructions, preferences) with caching."""
         cache_key = f"user_context:{self.cwd}"
         
         # Check cache
         if cache_key in self._cache and not self._cache[cache_key].is_expired():
             return self._cache[cache_key].value
         
-        # Collect (parallelized)
-        claude_md = await self._load_claude_md()
+        project_instructions = await self._load_project_instructions()
         
         result = {
             "current_date": self._get_current_date(),
         }
-        if claude_md:
-            result["claude_md"] = claude_md
+        if project_instructions:
+            result["project_instructions"] = project_instructions
         
         # Cache result
         self._cache[cache_key] = ContextCache(
@@ -220,15 +221,12 @@ class AsyncContextCollector:
             pass
         return "unknown"
     
-    async def _load_claude_md(self) -> str | None:
-        """Load CLAUDE.md file if exists."""
-        claude_md_path = self.cwd / "CLAUDE.md"
-        if claude_md_path.exists():
-            try:
-                return claude_md_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
-        return None
+    async def _load_project_instructions(self) -> str | None:
+        """Load project AGENTS.md chain and CLAUDE.md compatibility file."""
+        instructions = load_project_instructions(self.cwd)
+        if not instructions:
+            return None
+        return format_project_instructions(instructions)
     
     def _get_current_date(self) -> str:
         """Get current date string."""
@@ -255,11 +253,11 @@ class AsyncContextCollector:
                 "",
             ])
         
-        if "claude_md" in context:
+        if "project_instructions" in context:
             lines.extend([
-                "### Project Instructions (CLAUDE.md)",
+                "### Project Instructions",
                 "",
-                context["claude_md"],
+                context["project_instructions"],
                 "",
             ])
         

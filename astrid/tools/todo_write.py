@@ -8,6 +8,35 @@ from astrid.tooling import ToolDefinition, ToolResult
 _tasks = []
 _task_id_counter = 0
 
+VERIFICATION_KEYWORDS = (
+    "verify",
+    "verification",
+    "test",
+    "tests",
+    "pytest",
+    "acceptance",
+    "smoke",
+    "browser",
+    "playtest",
+    "check",
+    "validate",
+    "验收",
+    "验证",
+    "测试",
+    "试玩",
+)
+
+
+def _needs_verification_nudge(todos: list[dict]) -> bool:
+    if len(todos) < 3:
+        return False
+    if not todos or not all(todo.get("status", "pending") == "completed" for todo in todos):
+        return False
+    return not any(
+        any(keyword in str(todo.get("content", "")).lower() for keyword in VERIFICATION_KEYWORDS)
+        for todo in todos
+    )
+
 
 def _validate(input_data: dict) -> dict:
     todos = input_data.get("todos")
@@ -80,6 +109,15 @@ def _run(input_data: dict, context) -> ToolResult:
     lines.extend([
         f"Total: {total} | Pending: {pending} | In Progress: {in_progress} | Completed: {completed}",
     ])
+
+    if _needs_verification_nudge(todos):
+        lines.extend(
+            [
+                "",
+                "NOTE: You completed a multi-step task list without a verification task.",
+                "Before finalizing, run the relevant test, acceptance check, smoke test, or manual playtest and record the result.",
+            ]
+        )
 
     return ToolResult(ok=True, output="\n".join(lines))
 

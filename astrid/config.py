@@ -12,7 +12,9 @@ ASTRID_SETTINGS_PATH = ASTRID_DIR / "settings.json"
 ASTRID_HISTORY_PATH = ASTRID_DIR / "history.json"
 ASTRID_PERMISSIONS_PATH = ASTRID_DIR / "permissions.json"
 ASTRID_MCP_PATH = ASTRID_DIR / "mcp.json"
-CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+DEFAULT_MAX_OUTPUT_TOKENS = 12000
+DEFAULT_MAX_TOOL_STEPS = 25
+DEFAULT_MODEL_TIMEOUT_SECONDS = 180
 
 # 已知的合法模型名称（用于拼写检查提示）
 KNOWN_MODELS = [
@@ -90,17 +92,13 @@ def merge_settings(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
 
 
 def load_effective_settings(cwd: str | Path | None = None) -> dict[str, Any]:
-    claude_settings = read_settings_file(CLAUDE_SETTINGS_PATH)
     global_mcp = read_mcp_config_file(ASTRID_MCP_PATH)
     project_mcp = read_mcp_config_file(project_mcp_path(cwd))
     mini_code_settings = read_settings_file(ASTRID_SETTINGS_PATH)
 
     return merge_settings(
-        merge_settings(
-            merge_settings(claude_settings, {"mcpServers": global_mcp}),
-            {"mcpServers": project_mcp},
-        ),
-        mini_code_settings,
+        merge_settings(mini_code_settings, {"mcpServers": global_mcp}),
+        {"mcpServers": project_mcp},
     )
 
 
@@ -128,28 +126,66 @@ def save_pet_settings(updates: dict[str, Any]) -> None:
 
 def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
     effective = load_effective_settings(cwd)
-    env = {**dict(effective.get("env", {})), **os.environ}
+    configured_env = dict(effective.get("env", {}))
+    process_env = os.environ
     model = (
-        os.environ.get("ASTRID_MODEL")
+        process_env.get("ASTRID_MODEL")
         or effective.get("model")
-        or str(env.get("ANTHROPIC_MODEL", "")).strip()
+        or str(configured_env.get("ANTHROPIC_MODEL", "")).strip()
+        or str(process_env.get("ANTHROPIC_MODEL", "")).strip()
     )
-    base_url = str(env.get("ANTHROPIC_BASE_URL", "")).strip() or "https://api.anthropic.com"
-    auth_token = str(env.get("ANTHROPIC_AUTH_TOKEN", "")).strip() or None
-    api_key = str(env.get("ANTHROPIC_API_KEY", "")).strip() or None
+    base_url = (
+        str(configured_env.get("ANTHROPIC_BASE_URL", "")).strip()
+        or str(process_env.get("ANTHROPIC_BASE_URL", "")).strip()
+        or "https://api.anthropic.com"
+    )
+    configured_auth_token = str(configured_env.get("ANTHROPIC_AUTH_TOKEN", "")).strip()
+    configured_api_key = str(configured_env.get("ANTHROPIC_API_KEY", "")).strip()
+    if configured_auth_token or configured_api_key:
+        auth_token = configured_auth_token or None
+        api_key = configured_api_key or None
+    else:
+        auth_token = str(process_env.get("ANTHROPIC_AUTH_TOKEN", "")).strip() or None
+        api_key = str(process_env.get("ANTHROPIC_API_KEY", "")).strip() or None
     raw_max_output_tokens = (
-        os.environ.get("ASTRID_MAX_OUTPUT_TOKENS")
+        process_env.get("ASTRID_MAX_OUTPUT_TOKENS")
         or effective.get("maxOutputTokens")
-        or env.get("ASTRID_MAX_OUTPUT_TOKENS")
+        or configured_env.get("ASTRID_MAX_OUTPUT_TOKENS")
     )
-    max_output_tokens = None
+    max_output_tokens = DEFAULT_MAX_OUTPUT_TOKENS
     if raw_max_output_tokens is not None:
         try:
             parsed = int(raw_max_output_tokens)
             if parsed > 0:
                 max_output_tokens = parsed
         except (TypeError, ValueError):
-            max_output_tokens = None
+            max_output_tokens = DEFAULT_MAX_OUTPUT_TOKENS
+    raw_max_tool_steps = (
+        process_env.get("ASTRID_MAX_TOOL_STEPS")
+        or effective.get("maxToolSteps")
+        or configured_env.get("ASTRID_MAX_TOOL_STEPS")
+    )
+    max_tool_steps = DEFAULT_MAX_TOOL_STEPS
+    if raw_max_tool_steps is not None:
+        try:
+            parsed = int(raw_max_tool_steps)
+            if parsed > 0:
+                max_tool_steps = parsed
+        except (TypeError, ValueError):
+            max_tool_steps = DEFAULT_MAX_TOOL_STEPS
+    raw_model_timeout_seconds = (
+        process_env.get("ASTRID_MODEL_TIMEOUT_SECONDS")
+        or effective.get("modelTimeoutSeconds")
+        or configured_env.get("ASTRID_MODEL_TIMEOUT_SECONDS")
+    )
+    model_timeout_seconds = DEFAULT_MODEL_TIMEOUT_SECONDS
+    if raw_model_timeout_seconds is not None:
+        try:
+            parsed = int(raw_model_timeout_seconds)
+            if parsed > 0:
+                model_timeout_seconds = parsed
+        except (TypeError, ValueError):
+            model_timeout_seconds = DEFAULT_MODEL_TIMEOUT_SECONDS
 
     if not model:
         raise RuntimeError("No model configured. Set ~/.astrid/settings.json or ANTHROPIC_MODEL.")
@@ -164,8 +200,10 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
         "authToken": auth_token,
         "apiKey": api_key,
         "maxOutputTokens": max_output_tokens,
+        "maxToolSteps": max_tool_steps,
+        "modelTimeoutSeconds": model_timeout_seconds,
         "mcpServers": effective.get("mcpServers", {}),
-        "sourceSummary": f"config: {ASTRID_SETTINGS_PATH} > {CLAUDE_SETTINGS_PATH} > process.env",
+        "sourceSummary": f"config: {ASTRID_SETTINGS_PATH} > {ASTRID_MCP_PATH} > {project_mcp_path(cwd)} > process.env",
     }
 
 

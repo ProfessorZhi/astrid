@@ -29,6 +29,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Callable
 from datetime import datetime
 
 from astrid.config import ASTRID_DIR
+from astrid.memory import (
+    backup_legacy_memory_dir,
+    memories_root,
+    workspace_id as _workspace_id,
+)
 from astrid.state import Store
 
 
@@ -283,6 +288,7 @@ class AdvancedMemoryManager:
     
     def __init__(self, workspace: str | Path | None = None):
         self.workspace = Path(workspace) if workspace else Path.cwd()
+        self.workspace_id = _workspace_id(self.workspace)
         
         # 记忆存储（ALL 不是存储范围，仅用于搜索）
         self.memories: Dict[MemoryScope, List[MemoryEntry]] = {
@@ -299,6 +305,7 @@ class AdvancedMemoryManager:
         self.association_graph: Dict[str, List[str]] = {}  # memory_id -> [related_ids]
         
         # 初始化
+        self._migrate_legacy_project_memories()
         self._load_all()
         self._initialize_core_skills()
     
@@ -378,6 +385,76 @@ class AdvancedMemoryManager:
                 self.memories[scope].append(entry)
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error loading {scope.value} memory: {e}")
+
+    def _read_advanced_entries(self, path: Path, scope: MemoryScope) -> List[MemoryEntry]:
+        memory_file = path / "advanced_memory.json"
+        if not memory_file.exists():
+            return []
+
+        try:
+            data = json.loads(memory_file.read_text(encoding="utf-8"))
+            entries = []
+            for entry_data in data.get("entries", []):
+                entry = MemoryEntry.from_dict(entry_data)
+                entry.scope = scope
+                entries.append(entry)
+            return entries
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise RuntimeError(f"Failed to migrate legacy advanced memory file {memory_file}: {exc}") from exc
+
+    def _merge_legacy_entries(self, source_path: Path, scope: MemoryScope) -> bool:
+        entries = self._read_advanced_entries(source_path, scope)
+        if not entries:
+            return False
+
+        target_path = self._get_scope_path(scope)
+        target_path.mkdir(parents=True, exist_ok=True)
+        target_entries = self._read_advanced_entries(target_path, scope)
+        existing_ids = {entry.id for entry in target_entries}
+        changed = False
+
+        for entry in entries:
+            if entry.id in existing_ids:
+                continue
+            target_entries.append(entry)
+            existing_ids.add(entry.id)
+            changed = True
+
+        if changed:
+            data = {
+                "scope": scope.value,
+                "last_updated": time.time(),
+                "entries": [entry.to_dict() for entry in target_entries],
+            }
+            (target_path / "advanced_memory.json").write_text(
+                json.dumps(data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        return True
+
+    def _migrate_legacy_project_memories(self) -> None:
+        legacy_targets = [
+            (self.workspace / ".astrid-memory", MemoryScope.PROJECT),
+            (self.workspace / ".astrid-memory-local", MemoryScope.LOCAL),
+            (self.workspace / ".astrid-session-memory", MemoryScope.SESSION),
+        ]
+
+        for legacy_path, scope in legacy_targets:
+            if not legacy_path.exists():
+                continue
+            if not legacy_path.is_dir():
+                raise RuntimeError(f"Legacy memory path is not a directory: {legacy_path}")
+
+            has_basic_payload = (legacy_path / "memory.json").exists() or (legacy_path / "MEMORY.md").exists()
+            if has_basic_payload:
+                from astrid.memory import MemoryManager
+
+                MemoryManager(project_root=self.workspace)
+
+            migrated_advanced = self._merge_legacy_entries(legacy_path, scope)
+            if migrated_advanced:
+                backup_legacy_memory_dir(legacy_path)
     
     def _load_skills(self) -> None:
         """加载技能定义"""
@@ -411,16 +488,18 @@ class AdvancedMemoryManager:
     
     def _get_scope_path(self, scope: MemoryScope) -> Path:
         """获取范围的路径"""
+        root = memories_root()
+        project_root = root / "projects" / self.workspace_id
         if scope == MemoryScope.SYSTEM:
-            return ASTRID_DIR / "system_memory"
+            return root / "system"
         elif scope == MemoryScope.USER:
-            return ASTRID_DIR / "user_memory"
+            return root / "user"
         elif scope == MemoryScope.PROJECT:
-            return self.workspace / ".astrid-memory"
+            return project_root
         elif scope == MemoryScope.LOCAL:
-            return self.workspace / ".astrid-memory-local"
+            return project_root / "local"
         else:  # SESSION
-            return self.workspace / ".astrid-session-memory"
+            return root / "sessions" / self.workspace_id
     
     def _save_scope(self, scope: MemoryScope) -> None:
         """保存特定范围的记忆"""

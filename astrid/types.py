@@ -31,6 +31,8 @@ class StepDiagnostics:
     stopReason: str | None = None
     blockTypes: list[str] = field(default_factory=list)
     ignoredBlockTypes: list[str] = field(default_factory=list)
+    inputTokens: int | None = None
+    outputTokens: int | None = None
 
 
 @dataclass(slots=True)
@@ -45,4 +47,3 @@ class AgentStep:
 
 class ModelAdapter(Protocol):
     def next(self, messages: list[ChatMessage]) -> AgentStep: ...
-

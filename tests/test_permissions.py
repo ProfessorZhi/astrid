@@ -60,6 +60,22 @@ def test_permission_policy_snapshot_command_layer_matches_current_behavior(tmp_p
         manager.ensure_command("python", ["-c", "print(1)"], str(tmp_path))
 
 
+def test_auto_approve_workspace_allows_workspace_edits_and_commands(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ASTRID_AUTO_APPROVE_WORKSPACE", "1")
+    manager = PermissionManager(str(tmp_path))
+
+    manager.ensure_edit(str(tmp_path / "demo.txt"), "diff")
+    manager.ensure_command("python", ["-c", "print(1)"], str(tmp_path))
+
+
+def test_auto_approve_workspace_does_not_allow_outside_edits(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ASTRID_AUTO_APPROVE_WORKSPACE", "1")
+    manager = PermissionManager(str(tmp_path))
+
+    with pytest.raises(RuntimeError, match="Edit requires approval"):
+        manager.ensure_edit(str(tmp_path.parent / "outside.txt"), "diff")
+
+
 def test_permission_policy_snapshot_does_not_claim_os_sandbox_enforcement() -> None:
     snapshot = get_permission_policy_snapshot()
     os_sandbox = next(layer for layer in snapshot["layers"] if layer["name"] == "os_sandbox")

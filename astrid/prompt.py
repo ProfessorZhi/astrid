@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-def _maybe_read(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return None
+from astrid.project_instructions import format_project_instructions, load_project_instructions
 
 
 def _engineering_governance_rules() -> str:
@@ -94,8 +89,7 @@ def build_system_prompt(
     cwd_path = Path(cwd)
     permission_summary = permission_summary or []
     extras = extras or {}
-    global_claude_md = _maybe_read(Path.home() / ".claude" / "CLAUDE.md")
-    project_claude_md = _maybe_read(cwd_path / "CLAUDE.md")
+    project_instructions = load_project_instructions(cwd_path)
 
     parts = [
         "You are Astrid, a terminal coding assistant.",
@@ -219,14 +213,20 @@ The system has self-bootstrapping capabilities that enable continuous improvemen
 The system continuously improves itself based on usage patterns, making it more effective over time.
 """)
 
-    if global_claude_md:
-        parts.append(f"Global instructions from ~/.claude/CLAUDE.md:\n{global_claude_md}")
-    if project_claude_md:
-        parts.append(f"Project instructions from {cwd_path / 'CLAUDE.md'}:\n{project_claude_md}")
+    if project_instructions:
+        parts.append(format_project_instructions(project_instructions))
 
     # 注入高级记忆上下文
     advanced_memory_context = extras.get("advanced_memory_context", "")
     if advanced_memory_context:
         parts.append(f"## Active Memory Context\n\n{advanced_memory_context}")
+
+    memory_context = extras.get("memory_context", "")
+    if memory_context:
+        parts.append(
+            "## Project Memory & Context\n\n"
+            "The following information has been accumulated from Astrid memory:\n\n"
+            f"{memory_context}"
+        )
 
     return "\n\n".join(parts)

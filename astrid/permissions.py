@@ -26,6 +26,7 @@ SandboxSupport = Literal["policy_only", "os_enforced"]
 
 PERMISSION_POLICY_VERSION = 1
 SANDBOX_SUPPORT: SandboxSupport = "policy_only"
+AUTO_APPROVE_WORKSPACE_ENV = "ASTRID_AUTO_APPROVE_WORKSPACE"
 _PERMISSION_POLICY_SNAPSHOT: dict[str, Any] = {
     "version": PERMISSION_POLICY_VERSION,
     "sandboxSupport": SANDBOX_SUPPORT,
@@ -111,6 +112,10 @@ def _is_within_directory(root: str, target: str) -> bool:
 
 def _matches_directory_prefix(target_path: str, directories: set[str]) -> bool:
     return any(_is_within_directory(directory, target_path) for directory in directories)
+
+
+def _auto_approve_workspace_enabled() -> bool:
+    return os.environ.get(AUTO_APPROVE_WORKSPACE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _format_command_signature(command: str, args: list[str]) -> str:
@@ -370,6 +375,8 @@ class PermissionManager:
             raise RuntimeError(f"Command denied: {signature}")
         if signature in self.session_allowed_commands or signature in self.allowed_command_patterns:
             return
+        if _auto_approve_workspace_enabled() and _is_within_directory(self.workspace_root, command_cwd):
+            return
         if self.prompt is None:
             raise RuntimeError(f"Command requires approval: {signature}. Start astrid in TTY mode to approve it.")
         # Distinguish forced prompts (external trigger) from dangerous commands
@@ -420,6 +427,8 @@ class PermissionManager:
             or self.turn_allow_all_edits
             or normalized_target in self.allowed_edit_patterns
         ):
+            return
+        if _auto_approve_workspace_enabled() and _is_within_directory(self.workspace_root, normalized_target):
             return
         if self.prompt is None:
             raise RuntimeError(f"Edit requires approval: {normalized_target}. Start astrid in TTY mode to review it.")

@@ -13,6 +13,7 @@ from astrid.tty_app import (
     _handle_normal_mode_key,
     _render_agent_frame_update,
     _should_record_progress_entries,
+    _should_defer_chunk_for_paste_coalescing,
     _should_rotate_welcome_tips,
     _should_skip_agent_frame_update,
     _should_start_windows_wheel_fallback,
@@ -20,12 +21,19 @@ from astrid.tty_app import (
     _win_translate_console_mouse_event,
     _format_history,
     _handle_input,
+    _handle_normal_mode_event,
+    _handle_event,
+    _handle_normal_mode_return,
+    _handle_normal_mode_navigation,
     _handle_companion_command,
     _drain_next_steering_turn,
     _drain_next_queued_turn,
     _render_queued_turn_preview,
     _render_welcome_pet_block,
     _render_screen_simple,
+    _sync_welcome_transcript_entry,
+    _find_welcome_entry,
+    _normalize_shell_output_newlines,
     _get_renderable_transcript_entries,
     _mark_unfinished_tools,
     _save_transcript,
@@ -33,6 +41,7 @@ from astrid.tty_app import (
     _win_call_next_hook_ex,
     _win_drain_mouse_fallback_events,
     _win_titles_match,
+    _read_clipboard_text,
     summarize_tool_input,
     summarize_tool_output,
 )
@@ -47,10 +56,13 @@ from astrid.tui.chrome import strip_ansi
 from astrid.tui.transcript import format_transcript_text
 from astrid.tui.types import TranscriptEntry
 from astrid.tui.input_parser import WheelEvent, parse_input_chunk
+from astrid.tui.input_parser import PasteEvent
 from io import StringIO
 from pathlib import Path
 import queue
+import sys
 import time
+import types
 
 import pytest
 from PIL import Image
@@ -80,16 +92,16 @@ def test_win_translate_console_mouse_event_maps_wheel_directions() -> None:
     assert _win_translate_console_mouse_event(0x0001, 0x00000000) is None
 
 
-def test_win_build_input_mode_preserves_quick_edit_when_mouse_capture_disabled(monkeypatch) -> None:
+def test_win_build_input_mode_enables_mouse_by_default_in_tui(monkeypatch) -> None:
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
     monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
 
     mode = _win_build_input_mode(0x0040)
 
-    assert (mode & 0x0010) == 0
+    assert mode & 0x0010
     assert mode & 0x0080
     assert mode & 0x0200
-    assert mode & 0x0040
+    assert (mode & 0x0040) == 0
 
 
 def test_win_build_input_mode_enables_mouse_and_disables_quick_edit_when_requested(monkeypatch) -> None:
@@ -169,6 +181,58 @@ def test_parse_input_chunk_maps_ctrl_v_to_key_event() -> None:
     assert parsed.events == [KeyEvent(name="v", ctrl=True, meta=False)]
 
 
+def test_parse_input_chunk_preserves_bracketed_paste_as_single_event() -> None:
+    parsed = parse_input_chunk("\x1b[200~line1\nline2\x1b[201~")
+
+    assert parsed.rest == ""
+    assert parsed.events == [PasteEvent(text="line1\nline2")]
+
+
+def test_parse_input_chunk_treats_raw_multiline_chunk_as_paste() -> None:
+    parsed = parse_input_chunk("line1\r\nline2")
+
+    assert parsed.rest == ""
+    assert parsed.events == [PasteEvent(text="line1\nline2")]
+
+
+def test_parse_input_chunk_keeps_single_newline_as_return() -> None:
+    parsed = parse_input_chunk("\r")
+
+    assert parsed.events == [KeyEvent(name="return", ctrl=False, meta=False)]
+
+
+def test_parse_input_chunk_keeps_single_line_enter_as_text_then_return() -> None:
+    parsed = parse_input_chunk("hello\r\n")
+
+    assert parsed.rest == ""
+    assert [getattr(event, "text", None) for event in parsed.events[:-1]] == ["h", "e", "l", "l", "o"]
+    assert parsed.events[-1] == KeyEvent(name="return", ctrl=False, meta=False)
+
+
+def test_raw_single_line_enter_is_not_deferred_for_paste() -> None:
+    assert _should_defer_chunk_for_paste_coalescing("line1\r\n") is False
+
+
+def test_raw_ascii_paste_like_single_line_enter_is_deferred_briefly() -> None:
+    assert _should_defer_chunk_for_paste_coalescing("please create the file\r\n") is True
+
+
+def test_raw_non_ascii_single_line_enter_is_not_deferred_for_ime() -> None:
+    assert _should_defer_chunk_for_paste_coalescing("你好\r\n") is False
+
+
+def test_raw_multiline_enter_is_deferred_for_possible_streamed_paste() -> None:
+    assert _should_defer_chunk_for_paste_coalescing("line1\r\nline2\r\n") is True
+
+
+def test_plain_text_without_enter_is_not_deferred_for_paste() -> None:
+    assert _should_defer_chunk_for_paste_coalescing("line1") is False
+
+
+def test_bracketed_paste_is_not_deferred_by_raw_coalescer() -> None:
+    assert _should_defer_chunk_for_paste_coalescing("\x1b[200~line1\nline2\x1b[201~") is False
+
+
 def test_handle_normal_mode_key_pastes_clipboard_text(monkeypatch) -> None:
     cwd = str(Path(".").resolve())
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
@@ -198,6 +262,325 @@ def test_handle_normal_mode_key_pastes_clipboard_text(monkeypatch) -> None:
     assert state.input == "hello world"
     assert state.cursor_offset == len("hello world")
     assert rerenders == ["render"]
+
+
+def test_read_clipboard_text_configures_64_bit_windows_api(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    class _Callable:
+        def __init__(self, result):
+            self.result = result
+            self.argtypes = None
+            self.restype = None
+
+        def __call__(self, *args):
+            return self.result
+
+    class _FakeUser32:
+        def __init__(self):
+            self.OpenClipboard = _Callable(1)
+            self.CloseClipboard = _Callable(1)
+            self.IsClipboardFormatAvailable = _Callable(1)
+            self.GetClipboardData = _Callable(1234567890123)
+
+    class _FakeKernel32:
+        def __init__(self):
+            self.GlobalLock = _Callable(9876543210123)
+            self.GlobalUnlock = _Callable(1)
+
+    fake_user32 = _FakeUser32()
+    fake_kernel32 = _FakeKernel32()
+    fake_wintypes = types.SimpleNamespace(HWND=object, BOOL=object, UINT=object, HANDLE=object, HGLOBAL=object)
+    fake_ctypes = types.ModuleType("ctypes")
+    fake_ctypes.__path__ = []  # type: ignore[attr-defined]
+    fake_ctypes.windll = types.SimpleNamespace(user32=fake_user32, kernel32=fake_kernel32)
+    fake_ctypes.c_void_p = object()
+    def _fake_wstring_at(pointer):
+        calls["pointer"] = pointer
+        return "clipboard text"
+
+    fake_ctypes.wstring_at = _fake_wstring_at
+    fake_ctypes.wintypes = fake_wintypes
+
+    monkeypatch.setattr("astrid.tty_app.sys.platform", "win32")
+    monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
+    monkeypatch.setitem(sys.modules, "ctypes.wintypes", fake_wintypes)
+
+    assert _read_clipboard_text() == "clipboard text"
+    assert calls["pointer"] == 9876543210123
+    assert fake_user32.GetClipboardData.restype is object
+    assert fake_kernel32.GlobalLock.restype is fake_ctypes.c_void_p
+
+
+def test_handle_normal_mode_key_ctrl_v_compresses_multiline_clipboard(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[], input="hello ", cursor_offset=6)
+    rerenders: list[str] = []
+
+    monkeypatch.setattr("astrid.tty_app._read_clipboard_text", lambda: "line1\nline2")
+
+    handled = _handle_normal_mode_key(
+        args,
+        state,
+        KeyEvent(name="v", ctrl=True, meta=False),
+        [],
+        lambda: rerenders.append("render"),
+    )
+    rendered = strip_ansi(_build_agent_prompt_region(state))
+
+    assert handled is True
+    assert state.input == "hello line1\nline2"
+    assert "[Pasted text #1 +1 lines]" in rendered
+    assert rerenders == ["render"]
+
+
+def test_handle_normal_mode_paste_event_preserves_multiline_input(tmp_path: Path) -> None:
+    cwd = str(tmp_path)
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[], input="prefix: ", cursor_offset=len("prefix: "))
+    rerenders: list[str] = []
+
+    _handle_normal_mode_event(
+        args,
+        state,
+        PasteEvent(text="line1\nline2"),
+        lambda: rerenders.append("render"),
+    )
+
+    assert state.input == "prefix: line1\nline2"
+    assert state.cursor_offset == len(state.input)
+    assert state.queued_inputs == []
+    assert rerenders == ["render"]
+
+
+def test_multiline_paste_submission_keeps_original_message(tmp_path: Path) -> None:
+    cwd = str(tmp_path)
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    messages = [
+        {
+            "role": "system",
+            "content": build_system_prompt(
+                cwd,
+                permissions.get_summary(),
+                {
+                    "skills": tools.get_skills(),
+                    "mcpServers": tools.get_mcp_servers(),
+                },
+            ),
+        }
+    ]
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=messages,
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[], input="line1\nline2", cursor_offset=len("line1\nline2"))
+
+    _handle_normal_mode_return(args, state, [], lambda: None)
+
+    assert any(entry.kind == "user" and entry.body == "line1\nline2" for entry in state.transcript)
+    assert args.messages[-1] == {"role": "user", "content": "line1\nline2"}
+
+
+def test_build_agent_prompt_region_compresses_multiline_paste_display() -> None:
+    state = ScreenState(
+        history=[],
+        input="line1\nline2\nline3",
+        cursor_offset=len("line1\nline2\nline3"),
+        paste_display_start=0,
+        paste_display_end=len("line1\nline2\nline3"),
+        paste_display_line_count=3,
+    )
+
+    rendered = strip_ansi(_build_agent_prompt_region(state))
+
+    assert "[Pasted text #1 +2 lines]" in rendered
+    assert "line2" not in rendered
+
+
+def test_build_agent_prompt_region_shows_text_typed_after_multiline_paste() -> None:
+    pasted = "line1\nline2\nline3"
+    state = ScreenState(
+        history=[],
+        input=f"{pasted} please continue",
+        cursor_offset=len(f"{pasted} please continue"),
+        paste_display_start=0,
+        paste_display_end=len(pasted),
+        paste_display_line_count=3,
+    )
+
+    rendered = strip_ansi(_build_agent_prompt_region(state))
+
+    assert "[Pasted text #1 +2 lines] please continue" in rendered
+
+
+def test_backspace_at_compressed_paste_removes_whole_paste_block() -> None:
+    pasted = "line1\nline2\nline3"
+    state = ScreenState(
+        history=[],
+        input=f"{pasted} suffix",
+        cursor_offset=len(pasted),
+        paste_display_start=0,
+        paste_display_end=len(pasted),
+        paste_display_line_count=3,
+    )
+    rerenders: list[str] = []
+
+    handled = _handle_normal_mode_navigation(
+        state,
+        KeyEvent(name="backspace", ctrl=False, meta=False),
+        lambda: rerenders.append("render"),
+    )
+
+    assert handled is True
+    assert state.input == " suffix"
+    assert state.cursor_offset == 0
+    assert state.paste_display_start is None
+    assert rerenders == ["render"]
+
+
+def test_left_and_right_arrows_skip_hidden_paste_block() -> None:
+    pasted = "line1\nline2\nline3"
+    state = ScreenState(
+        history=[],
+        input=f"{pasted} suffix",
+        cursor_offset=len(pasted),
+        paste_display_start=0,
+        paste_display_end=len(pasted),
+        paste_display_line_count=3,
+    )
+
+    _handle_normal_mode_navigation(
+        state,
+        KeyEvent(name="left", ctrl=False, meta=False),
+        lambda: None,
+    )
+    assert state.cursor_offset == 0
+
+    _handle_normal_mode_navigation(
+        state,
+        KeyEvent(name="right", ctrl=False, meta=False),
+        lambda: None,
+    )
+    assert state.cursor_offset == len(pasted)
+
+
+def test_ctrl_c_with_input_clears_input_without_exiting(tmp_path: Path) -> None:
+    cwd = str(tmp_path)
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[], input="draft", cursor_offset=len("draft"))
+    rerenders: list[str] = []
+
+    _handle_event(
+        args,
+        state,
+        KeyEvent(name="c", ctrl=True, meta=False),
+        lambda: rerenders.append("render"),
+        None,
+        {},
+    )
+
+    assert state.input == ""
+    assert state.status == "Input cleared. Press Ctrl+C again to exit."
+    assert rerenders == ["render"]
+
+
+def test_ctrl_c_idle_requires_second_press_to_exit(tmp_path: Path) -> None:
+    cwd = str(tmp_path)
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime=None,
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[])
+
+    _handle_event(
+        args,
+        state,
+        KeyEvent(name="c", ctrl=True, meta=False),
+        lambda: None,
+        None,
+        {},
+    )
+    assert state.status == "Press Ctrl+C again to exit."
+
+    with pytest.raises(SystemExit):
+        _handle_event(
+            args,
+            state,
+            KeyEvent(name="c", ctrl=True, meta=False),
+            lambda: None,
+            None,
+            {},
+        )
+
+
+def test_build_agent_prompt_region_shows_shell_permission_choices() -> None:
+    state = ScreenState(
+        history=[],
+        pending_approval=type(
+            "Pending",
+            (),
+            {
+                "request": {
+                    "kind": "edit",
+                    "summary": "astrid wants to apply a file modification",
+                    "details": ["target: C:\\repo\\test\\permission-check.txt", "", "--- diff ---"],
+                    "choices": [
+                        {"key": "1", "label": "apply once", "decision": "allow_once"},
+                        {"key": "2", "label": "allow this file in this turn", "decision": "allow_turn"},
+                        {"key": "5", "label": "reject once", "decision": "deny_once"},
+                    ],
+                },
+                "selected_choice_index": 0,
+            },
+        )(),
+    )
+
+    rendered = strip_ansi(_build_agent_prompt_region(state))
+
+    assert "Action Required" in rendered
+    assert "permission-check.txt" in rendered
+    assert "1 apply once" in rendered
+    assert "2 allow this file in this turn" in rendered
+    assert "5 reject once" in rendered
 
 
 def test_render_agent_frame_update_only_rewrites_prompt_region() -> None:
@@ -230,6 +613,21 @@ def test_render_agent_frame_update_only_rewrites_prompt_region() -> None:
     assert second_prompt_lines == 1
 
 
+def test_render_agent_frame_update_gutters_shell_content_for_embedded_terminals() -> None:
+    rendered, rendered_ids, prompt_lines = _render_agent_frame_update(
+        [TranscriptEntry(id=1, kind="user", body="hello")],
+        (),
+        "astrid> hi",
+        previous_prompt_line_count=0,
+    )
+
+    visible_lines = strip_ansi(rendered).splitlines()
+
+    assert visible_lines == [" you", "   hello", "", " astrid> hi"]
+    assert rendered_ids == (1,)
+    assert prompt_lines == 1
+
+
 def test_render_agent_frame_update_keeps_welcome_static_after_first_render() -> None:
     transcript = [TranscriptEntry(id=1, kind="welcome", body="WELCOME PET")]
 
@@ -251,6 +649,33 @@ def test_render_agent_frame_update_keeps_welcome_static_after_first_render() -> 
     assert second.startswith("\r\x1b[J")
     assert second.endswith("astrid> hello")
     assert next_ids == rendered_ids
+    assert next_prompt_lines == 1
+
+
+def test_render_agent_frame_update_preserves_scrollback_writes_welcome_once() -> None:
+    transcript = [TranscriptEntry(id=1, kind="welcome", body="WELCOME PET")]
+
+    first, rendered_ids, prompt_lines = _render_agent_frame_update(
+        transcript,
+        (),
+        "astrid> ",
+        previous_prompt_line_count=0,
+        preserve_scrollback=True,
+    )
+    second, next_ids, next_prompt_lines = _render_agent_frame_update(
+        transcript + [TranscriptEntry(id=2, kind="user", body="hello")],
+        rendered_ids,
+        "astrid> ",
+        previous_prompt_line_count=prompt_lines,
+        preserve_scrollback=True,
+    )
+
+    assert "WELCOME PET" in first
+    assert "WELCOME PET" not in second
+    assert "hello" in second
+    assert "\x1b[J" not in first + second
+    assert second.startswith("\r\x1b[2K")
+    assert next_ids == (1, 2)
     assert next_prompt_lines == 1
 
 
@@ -303,7 +728,7 @@ def test_render_agent_frame_update_rewrites_full_bottom_region() -> None:
         previous_prompt_line_count=first_prompt_lines,
     )
 
-    assert first.endswith("astrid> /\n/help\nstatus: waiting")
+    assert first.endswith(" astrid> /\n /help\n status: waiting")
     assert first_prompt_lines == 3
     assert second.startswith("\r\x1b[2A\x1b[J")
     assert "/help" not in second
@@ -311,6 +736,85 @@ def test_render_agent_frame_update_rewrites_full_bottom_region() -> None:
     assert second.endswith("astrid> hi")
     assert second_ids == first_ids
     assert second_prompt_lines == 1
+
+
+def test_render_agent_frame_update_preserves_scrollback_without_erase_to_end() -> None:
+    transcript = [
+        TranscriptEntry(id=1, kind="user", body="hello"),
+        TranscriptEntry(id=2, kind="assistant", body="world"),
+    ]
+
+    first, rendered_ids, prompt_lines = _render_agent_frame_update(
+        transcript,
+        (),
+        "astrid> hi",
+        previous_prompt_line_count=0,
+        preserve_scrollback=True,
+    )
+    second, next_ids, next_prompt_lines = _render_agent_frame_update(
+        transcript,
+        rendered_ids,
+        "astrid> hi there",
+        previous_prompt_line_count=prompt_lines,
+        preserve_scrollback=True,
+    )
+
+    assert "\x1b[J" not in first
+    assert "\x1b[J" not in second
+    assert second.startswith("\r\x1b[2K")
+    assert "hello" not in second
+    assert "world" not in second
+    assert second.endswith("astrid> hi there")
+    assert next_ids == rendered_ids
+    assert next_prompt_lines == 1
+
+
+def test_render_agent_frame_update_preserves_scrollback_when_appending_entries() -> None:
+    initial = [TranscriptEntry(id=1, kind="user", body="hello")]
+    expanded = initial + [TranscriptEntry(id=2, kind="assistant", body="world")]
+
+    _, rendered_ids, prompt_lines = _render_agent_frame_update(
+        initial,
+        (),
+        "astrid> ",
+        previous_prompt_line_count=0,
+        preserve_scrollback=True,
+    )
+    rendered, next_ids, _ = _render_agent_frame_update(
+        expanded,
+        rendered_ids,
+        "astrid> ",
+        previous_prompt_line_count=prompt_lines,
+        preserve_scrollback=True,
+    )
+
+    assert "\x1b[J" not in rendered
+    assert rendered.startswith("\r\x1b[2K")
+    assert "hello" not in rendered
+    assert "world" in rendered
+    assert next_ids == (1, 2)
+
+
+def test_normalize_shell_output_newlines_uses_crlf_for_hosted_terminals() -> None:
+    assert _normalize_shell_output_newlines("a\nb\r\nc\rd") == "a\r\nb\r\nc\r\nd"
+
+
+def test_render_agent_frame_update_preserves_scrollback_clears_multiline_prompt() -> None:
+    rendered, rendered_ids, prompt_lines = _render_agent_frame_update(
+        [TranscriptEntry(id=1, kind="user", body="hello")],
+        (),
+        "astrid> hi",
+        previous_prompt_line_count=3,
+        preserve_scrollback=True,
+    )
+
+    assert "\x1b[J" not in rendered
+    assert rendered.startswith("\r\x1b[2A")
+    assert rendered.count("\x1b[2K") == 3
+    assert "hello" in rendered
+    assert rendered.endswith("astrid> hi")
+    assert rendered_ids == (1,)
+    assert prompt_lines == 1
 
 
 def test_build_agent_prompt_region_includes_footer_status() -> None:
@@ -341,19 +845,27 @@ def test_build_agent_prompt_region_includes_busy_spinner_line() -> None:
     assert "progress" not in rendered
 
 
-def test_windows_wheel_fallback_requires_explicit_mouse_opt_in(monkeypatch) -> None:
+def test_windows_wheel_fallback_is_default_in_tui_and_can_be_disabled(monkeypatch) -> None:
     monkeypatch.setattr("astrid.tui.screen.sys.platform", "win32")
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
     monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
+    monkeypatch.delenv("ASTRID_ENABLE_MOUSE_FALLBACK", raising=False)
+
+    assert _should_start_windows_wheel_fallback("agent") is True
+    assert _should_start_windows_wheel_fallback("tui") is True
+    assert _should_start_windows_wheel_fallback("shell") is False
+
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE_FALLBACK", "0")
 
     assert _should_start_windows_wheel_fallback("agent") is False
     assert _should_start_windows_wheel_fallback("tui") is False
     assert _should_start_windows_wheel_fallback("shell") is False
 
-    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE_FALLBACK", "1")
+    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "0")
 
-    assert _should_start_windows_wheel_fallback("agent") is True
-    assert _should_start_windows_wheel_fallback("tui") is True
+    assert _should_start_windows_wheel_fallback("agent") is False
+    assert _should_start_windows_wheel_fallback("tui") is False
     assert _should_start_windows_wheel_fallback("shell") is False
 
 
@@ -374,13 +886,13 @@ def test_agent_mode_reuses_tui_animation_and_polling() -> None:
     assert _render_throttle_interval("tui") == 0.016
 
 
-def test_shell_mode_disables_periodic_animation_repaints() -> None:
+def test_shell_mode_disables_periodic_animation_repaints_to_preserve_scrollback() -> None:
     assert _busy_animation_interval("shell") is None
     assert _idle_poll_interval("shell") >= 0.1
     assert _render_throttle_interval("shell") >= 0.05
 
 
-def test_codex_terminal_uses_shell_mode_for_tty_loop(monkeypatch) -> None:
+def test_codex_terminal_uses_native_scrollback_for_tty_loop(monkeypatch) -> None:
     from astrid.tty_app import _terminal_mode_label
     from astrid.tui.screen import _terminal_mode
 
@@ -393,7 +905,7 @@ def test_codex_terminal_uses_shell_mode_for_tty_loop(monkeypatch) -> None:
     assert _render_throttle_interval(_terminal_mode()) >= 0.05
 
 
-def test_windows_terminal_defaults_to_shell_mode_for_tty_loop(monkeypatch) -> None:
+def test_windows_terminal_defaults_to_native_scrollback_for_tty_loop(monkeypatch) -> None:
     from astrid.tty_app import _terminal_mode_label
     from astrid.tui.screen import _terminal_mode
 
@@ -404,12 +916,12 @@ def test_windows_terminal_defaults_to_shell_mode_for_tty_loop(monkeypatch) -> No
     assert _terminal_mode_label() == "shell mode"
 
 
-def test_terminal_mode_label_treats_agent_as_tui_for_users(monkeypatch) -> None:
+def test_terminal_mode_label_treats_agent_as_shell_for_users(monkeypatch) -> None:
     from astrid.tty_app import _terminal_mode_label
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "agent")
 
-    assert _terminal_mode_label() == "tui mode"
+    assert _terminal_mode_label() == "shell mode"
 
 
 def test_should_skip_agent_frame_update_only_when_visible_state_matches() -> None:
@@ -686,7 +1198,7 @@ def test_inline_mode_does_not_record_progress_entries() -> None:
     assert _should_record_progress_entries("shell") is False
 
 
-def test_handle_normal_mode_wheel_scrolls_agent_mode_both_directions(monkeypatch) -> None:
+def test_handle_normal_mode_wheel_scrolls_explicit_tui_mode_both_directions(monkeypatch) -> None:
     from astrid.tty_app import _handle_normal_mode_wheel
 
     cwd = str(Path(".").resolve())
@@ -707,8 +1219,8 @@ def test_handle_normal_mode_wheel_scrolls_agent_mode_both_directions(monkeypatch
         ],
     )
     rerenders: list[str] = []
-    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "agent")
-    monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
+    monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
     monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
 
     handled_up = _handle_normal_mode_wheel(args, state, WheelEvent(direction="up"), lambda: rerenders.append("up"))
@@ -1547,6 +2059,31 @@ def test_render_screen_simple_welcome_shows_shell_mode_label(monkeypatch) -> Non
     rendered = strip_ansi(output.getvalue())
     assert "welcome · shell mode" in rendered
     assert "Mode: shell. PowerShell keeps native scrollback." not in rendered
+
+
+def test_shell_welcome_entry_can_be_rendered_as_startup_banner(monkeypatch) -> None:
+    cwd = str(Path(".").resolve())
+    permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
+    tools = create_default_tool_registry(cwd, runtime=None)
+    args = TtyAppArgs(
+        runtime={"model": "MiniMax-M2.7"},
+        tools=tools,
+        model=MockModelAdapter(),
+        messages=[],
+        cwd=cwd,
+        permissions=permissions,
+    )
+    state = ScreenState(history=[])
+
+    monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
+    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (120, 40))
+
+    _sync_welcome_transcript_entry(args, state)
+    welcome = _find_welcome_entry(state)
+
+    assert welcome is not None
+    assert "welcome · shell mode" in welcome.body
+    assert "MiniMax-M2.7" in welcome.body
 
 
 def test_build_screen_simple_keeps_welcome_header_visible_in_short_shell_window(monkeypatch) -> None:

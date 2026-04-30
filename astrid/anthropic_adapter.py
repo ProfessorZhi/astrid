@@ -7,12 +7,12 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from astrid.config import DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MODEL_TIMEOUT_SECONDS
 from astrid.types import AgentStep, StepDiagnostics
 
 DEFAULT_MAX_RETRIES = 4
 BASE_RETRY_DELAY_MS = 500
 MAX_RETRY_DELAY_MS = 8000
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 
 def _sleep(milliseconds: int) -> None:
@@ -77,6 +77,14 @@ def _extract_error_message(data: Any, status: int) -> str:
         if isinstance(error, dict) and isinstance(error.get("message"), str):
             return error["message"]
     return f"Model request failed: {status}"
+
+
+def _as_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
 
 
 def _parse_assistant_text(content: str) -> tuple[str, str | None]:
@@ -186,26 +194,37 @@ class AnthropicModelAdapter:
         )
 
         max_retries = _get_retry_limit()
-        response = None
+        data = None
+        status = 200
         for attempt in range(max_retries + 1):
             try:
-                response = urllib.request.urlopen(request, timeout=60)  # noqa: S310
+                response = urllib.request.urlopen(
+                    request,
+                    timeout=int(self.runtime.get("modelTimeoutSeconds") or DEFAULT_MODEL_TIMEOUT_SECONDS),
+                )  # noqa: S310
+                data = _read_json_body(response)
+                status = getattr(response, "status", getattr(response, "code", 200))
+                if status >= 400 and _should_retry_status(status) and attempt < max_retries:
+                    _sleep(_get_retry_delay_ms(attempt + 1, None))
+                    continue
                 break
             except urllib.error.HTTPError as error:
-                response = error
                 if not _should_retry_status(error.code) or attempt >= max_retries:
+                    data = _read_json_body(error)
+                    status = error.code
                     break
                 _sleep(_get_retry_delay_ms(attempt + 1, _parse_retry_after_ms(error.headers.get("retry-after"))))
             except urllib.error.URLError:
                 if attempt >= max_retries:
                     raise
                 _sleep(_get_retry_delay_ms(attempt + 1, None))
+            except TimeoutError:
+                if attempt >= max_retries:
+                    raise
+                _sleep(_get_retry_delay_ms(attempt + 1, None))
 
-        if response is None:
+        if data is None:
             raise RuntimeError("Model request failed before receiving a response")
-
-        data = _read_json_body(response)
-        status = getattr(response, "status", getattr(response, "code", 200))
         if status >= 400:
             raise RuntimeError(_extract_error_message(data, status))
 
@@ -225,10 +244,13 @@ class AnthropicModelAdapter:
                 ignored_block_types.append(str(block_type))
 
         parsed_text, kind = _parse_assistant_text("\n".join(text_parts).strip())
+        usage = data.get("usage") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else {}
         diagnostics = StepDiagnostics(
             stopReason=data.get("stop_reason") if isinstance(data, dict) else None,
             blockTypes=block_types,
             ignoredBlockTypes=ignored_block_types,
+            inputTokens=_as_positive_int(usage.get("input_tokens")),
+            outputTokens=_as_positive_int(usage.get("output_tokens")),
         )
 
         if tool_calls:

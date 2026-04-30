@@ -93,6 +93,7 @@ from astrid.tui.welcome_hero import render_welcome_hero_profile_block
 from astrid.tui.input import render_input_prompt
 from astrid.tui.input_parser import (
     KeyEvent,
+    PasteEvent,
     ParsedInputEvent,
     TextEvent,
     WheelEvent,
@@ -133,6 +134,39 @@ from astrid.workspace import resolve_tool_path
 
 # Alias to the single canonical implementation in chrome.py
 _get_terminal_size = _cached_terminal_size
+
+_BRACKETED_PASTE_ENABLE = "\x1b[?2004h"
+_BRACKETED_PASTE_DISABLE = "\x1b[?2004l"
+_RAW_PASTE_COALESCE_SECONDS = 0.06
+_RAW_PASTE_SINGLE_LINE_MIN_CHARS = 8
+
+
+def _should_defer_chunk_for_paste_coalescing(chunk: str) -> bool:
+    """Return True when raw terminal input may be a line-split paste.
+
+    Some Windows/hosted terminals ignore bracketed paste and deliver clipboard
+    text as ordinary text plus Enter events, one line at a time. We briefly
+    delay any text-bearing chunk that contains a newline so adjacent chunks can
+    be reassembled before parsing. If no adjacent chunk arrives, the parser
+    still treats a single line plus Enter as ordinary input.
+    """
+    if not chunk or "\x1b[200~" in chunk:
+        return False
+    if "\n" not in chunk and "\r" not in chunk:
+        return False
+    normalized = chunk.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if len(lines) <= 2 and lines[-1] == "":
+        first_line = lines[0]
+        # Windows hosted terminals can deliver Ctrl+V as one completed line at
+        # a time. Defer only paste-like ASCII lines; never hold IME/non-ASCII
+        # input, so a normal "你好" + Enter still submits immediately.
+        if len(first_line) < _RAW_PASTE_SINGLE_LINE_MIN_CHARS:
+            return False
+        if any(ord(ch) > 0x7F for ch in first_line):
+            return False
+        return any(ch not in {"\n", "\t", " "} and not ("\x00" <= ch <= "\x1f") for ch in first_line)
+    return any(ch not in {"\n", "\t", " "} and not ("\x00" <= ch <= "\x1f") for ch in normalized)
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +307,9 @@ class AggregatedEditProgress:
 class ScreenState:
     input: str = ""
     cursor_offset: int = 0
+    paste_display_start: int | None = None
+    paste_display_end: int | None = None
+    paste_display_line_count: int = 0
     queued_inputs: list[str] = field(default_factory=list)
     steering_inputs: list[str] = field(default_factory=list)
     transcript: list[TranscriptEntry] = field(default_factory=list)
@@ -326,6 +363,7 @@ class ScreenState:
     wheel_debug_callback_foreground_title: str | None = None
     welcome_tip_index: int = 0
     welcome_tip_rotated_at: float = 0.0
+    ctrl_c_exit_armed: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -437,11 +475,27 @@ def _clear_prompt_region(previous_line_count: int) -> str:
     return f"\r{move_up}\x1b[J"
 
 
+def _clear_prompt_region_preserving_scrollback(previous_line_count: int) -> str:
+    if previous_line_count <= 0:
+        return ""
+    if previous_line_count == 1:
+        return "\r\x1b[2K"
+    parts = ["\r", f"\x1b[{previous_line_count - 1}A"]
+    for index in range(previous_line_count):
+        parts.append("\x1b[2K")
+        if index < previous_line_count - 1:
+            parts.append("\x1b[1B\r")
+    parts.append(f"\x1b[{previous_line_count - 1}A\r")
+    return "".join(parts)
+
+
 def _render_agent_frame_update(
     transcript_entries: list[TranscriptEntry],
     previous_transcript_ids: tuple[int, ...],
     prompt_body: str,
     previous_prompt_line_count: int,
+    *,
+    preserve_scrollback: bool = False,
 ) -> tuple[str, tuple[int, ...], int]:
     current_ids = tuple(entry.id for entry in transcript_entries)
     has_prefix = (
@@ -450,20 +504,46 @@ def _render_agent_frame_update(
     )
     visible_entries = transcript_entries[len(previous_transcript_ids) :] if has_prefix else transcript_entries
 
+    prompt_line_count = _count_text_lines(prompt_body)
+    if preserve_scrollback:
+        buf = [_clear_prompt_region_preserving_scrollback(previous_prompt_line_count)]
+        if visible_entries:
+            transcript_text = render_transcript_simple(visible_entries)
+            if transcript_text:
+                buf.append(_apply_simple_left_gutter_to_text(transcript_text))
+                if not transcript_text.endswith("\n"):
+                    buf.append("\n")
+                buf.append("\n")
+            buf.append(_apply_simple_left_gutter_to_text(prompt_body))
+            return "".join(buf), current_ids, prompt_line_count
+        if previous_prompt_line_count <= 1 and prompt_line_count <= 1:
+            buf.append(_apply_simple_left_gutter_to_text(prompt_body))
+            return "".join(buf), current_ids, prompt_line_count
+        buf.append(_apply_simple_left_gutter_to_text(prompt_body))
+        return "".join(buf), current_ids, prompt_line_count
+
     buf = [_clear_prompt_region(previous_prompt_line_count)]
     if visible_entries:
         transcript_text = render_transcript_simple(visible_entries)
         if transcript_text:
-            buf.append(transcript_text)
+            buf.append(_apply_simple_left_gutter_to_text(transcript_text))
             if not transcript_text.endswith("\n"):
                 buf.append("\n")
             buf.append("\n")
-    buf.append(prompt_body)
-    return "".join(buf), current_ids, _count_text_lines(prompt_body)
+    buf.append(_apply_simple_left_gutter_to_text(prompt_body))
+    return "".join(buf), current_ids, prompt_line_count
 
 
 def _should_start_windows_wheel_fallback(terminal_mode: str) -> bool:
-    return terminal_mode in {"tui", "agent"} and _should_capture_mouse()
+    if terminal_mode not in {"tui", "agent"} or not _should_capture_mouse():
+        return False
+    value = os.environ.get("ASTRID_ENABLE_MOUSE_FALLBACK", "")
+    if value.strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    # Codex embedded terminals on Windows can still translate wheel motion into
+    # Up/Down even after VT mouse tracking is enabled. Keep the native hook as
+    # the default fallback, but avoid any per-frame foreground polling.
+    return True
 
 
 def _should_rotate_welcome_tips() -> bool:
@@ -1198,6 +1278,15 @@ def _apply_simple_left_gutter(lines: list[str], gutter: str = _SIMPLE_LEFT_GUTTE
     return [f"{gutter}{line}" if line else "" for line in lines]
 
 
+def _apply_simple_left_gutter_to_text(text: str) -> str:
+    return "\n".join(_apply_simple_left_gutter(_split_rendered_lines(text)))
+
+
+def _normalize_shell_output_newlines(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return normalized.replace("\n", "\r\n")
+
+
 def _get_chrome_overhead(args: TtyAppArgs, state: ScreenState) -> int:
     """Measure the actual line count of header + prompt panels (cached).
 
@@ -1305,7 +1394,8 @@ def _scroll_transcript_by(args: TtyAppArgs, state: ScreenState, delta: int) -> b
 def _build_simple_prompt_body(state: ScreenState) -> str:
     compact = _is_compact_terminal()
     commands = _get_visible_commands(state.input)
-    prompt_body = render_input_prompt(state.input, state.cursor_offset, compact=compact)
+    input_text, cursor_offset = _get_display_input(state)
+    prompt_body = render_input_prompt(input_text, cursor_offset, compact=compact)
     if commands:
         prompt_body += "\n" + render_slash_menu(
             commands,
@@ -1331,6 +1421,27 @@ def _render_queued_turn_preview(state: ScreenState) -> str:
     preview = _truncate_for_display(" ".join(state.queued_inputs[0].split()).strip(), 96)
     suffix = f" (+{len(state.queued_inputs) - 1})" if len(state.queued_inputs) > 1 else ""
     return f"{SUBTLE}next turn:{RESET} {preview}{SUBTLE}{suffix}{RESET}"
+
+
+def _get_display_input(state: ScreenState) -> tuple[str, int]:
+    if "\n" not in state.input or state.paste_display_start is None or state.paste_display_end is None:
+        return state.input, state.cursor_offset
+    if state.paste_display_start > len(state.input) or state.paste_display_end > len(state.input):
+        return state.input, state.cursor_offset
+
+    prefix = state.input[:state.paste_display_start]
+    suffix = state.input[state.paste_display_end:]
+    hidden_lines = max(0, state.paste_display_line_count - 1)
+    paste_label = f"[Pasted text #1 +{hidden_lines} lines]"
+    display = f"{prefix}{paste_label}{suffix}"
+
+    if state.cursor_offset <= state.paste_display_start:
+        display_cursor = state.cursor_offset
+    elif state.cursor_offset <= state.paste_display_end:
+        display_cursor = len(prefix) + len(paste_label)
+    else:
+        display_cursor = len(prefix) + len(paste_label) + (state.cursor_offset - state.paste_display_end)
+    return display, display_cursor
 
 
 def _get_simple_static_content_lines(args: TtyAppArgs, state: ScreenState) -> list[str]:
@@ -1434,6 +1545,8 @@ def _build_simple_page_flow_document(
 
 
 def _build_agent_prompt_region(state: ScreenState) -> str:
+    if state.pending_approval is not None:
+        return _render_shell_permission_prompt(state)
     prompt_body = _build_simple_prompt_body(state)
     if _should_append_single_agent_busy_line(state):
         return f"{_render_single_agent_busy_line(state)}\n\n{prompt_body}"
@@ -1441,6 +1554,31 @@ def _build_agent_prompt_region(state: ScreenState) -> str:
     if not footer_status:
         return prompt_body
     return f"{prompt_body}\n\n{footer_status}"
+
+
+def _render_shell_permission_prompt(state: ScreenState) -> str:
+    pending = state.pending_approval
+    request = pending.request if pending is not None else {}
+    lines = ["Action Required", request.get("summary", "Permission Request")]
+    details = request.get("details", [])
+    for detail in details:
+        for line in str(detail).splitlines():
+            stripped = line.strip()
+            if stripped:
+                lines.append(stripped)
+                break
+        if len(lines) >= 4:
+            break
+    lines.append("")
+    lines.append("Use number keys, arrows + Enter, or Esc to reject.")
+    choices = request.get("choices", [])
+    selected = getattr(pending, "selected_choice_index", 0) if pending is not None else 0
+    for index, choice in enumerate(choices):
+        marker = ">" if index == selected else " "
+        key = choice.get("key", "")
+        label = choice.get("label", "")
+        lines.append(f"{marker} {key} {label}".rstrip())
+    return "\n".join(lines)
 
 
 def _enqueue_next_turn(state: ScreenState, input_text: str) -> bool:
@@ -1679,7 +1817,8 @@ def _render_footer_cached(
 def _render_prompt_panel(state: ScreenState) -> str:
     compact = _is_compact_terminal()
     commands = _get_visible_commands(state.input)
-    prompt_body = render_input_prompt(state.input, state.cursor_offset, compact=compact)
+    input_text, cursor_offset = _get_display_input(state)
+    prompt_body = render_input_prompt(input_text, cursor_offset, compact=compact)
     if commands:
         prompt_body += "\n" + render_slash_menu(
             commands,
@@ -2434,14 +2573,27 @@ def _read_clipboard_text() -> str:
             from ctypes import wintypes
 
             CF_UNICODETEXT = 13
-            GMEM_MOVEABLE = 0x0002
 
             user32 = ctypes.windll.user32  # type: ignore[attr-defined]
             kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            user32.OpenClipboard.argtypes = [wintypes.HWND]
+            user32.OpenClipboard.restype = wintypes.BOOL
+            user32.CloseClipboard.argtypes = []
+            user32.CloseClipboard.restype = wintypes.BOOL
+            user32.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
+            user32.IsClipboardFormatAvailable.restype = wintypes.BOOL
+            user32.GetClipboardData.argtypes = [wintypes.UINT]
+            user32.GetClipboardData.restype = wintypes.HANDLE
+            kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalLock.restype = ctypes.c_void_p
+            kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalUnlock.restype = wintypes.BOOL
 
             if not user32.OpenClipboard(None):
                 return ""
             try:
+                if not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+                    return ""
                 handle = user32.GetClipboardData(CF_UNICODETEXT)
                 if not handle:
                     return ""
@@ -2462,18 +2614,106 @@ def _read_clipboard_text() -> str:
 
 
 def _normalize_pasted_text(text: str) -> str:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     return normalized
+
+
+def _clear_paste_display(state: ScreenState) -> None:
+    state.paste_display_start = None
+    state.paste_display_end = None
+    state.paste_display_line_count = 0
+
+
+def _has_valid_paste_display(state: ScreenState) -> bool:
+    return (
+        state.paste_display_start is not None
+        and state.paste_display_end is not None
+        and 0 <= state.paste_display_start <= state.paste_display_end <= len(state.input)
+    )
+
+
+def _insert_paste_text(state: ScreenState, raw_text: str) -> bool:
+    pasted = _normalize_pasted_text(raw_text)
+    paste_start = state.cursor_offset
+    if not _insert_input_text(state, pasted):
+        return False
+    if "\n" in pasted:
+        state.paste_display_start = paste_start
+        state.paste_display_end = paste_start + len(pasted)
+        state.paste_display_line_count = len(pasted.splitlines()) or 1
+    return True
 
 
 def _insert_input_text(state: ScreenState, text: str) -> bool:
     if not text:
         return False
+    insert_at = state.cursor_offset
     state.input = state.input[:state.cursor_offset] + text + state.input[state.cursor_offset:]
     state.cursor_offset += len(text)
+    if _has_valid_paste_display(state):
+        text_len = len(text)
+        assert state.paste_display_start is not None
+        assert state.paste_display_end is not None
+        if insert_at <= state.paste_display_start:
+            state.paste_display_start += text_len
+            state.paste_display_end += text_len
+        elif insert_at < state.paste_display_end:
+            _clear_paste_display(state)
     state.selected_slash_index = 0
     state.history_index = len(state.history)
     return True
+
+
+def _adjust_paste_display_after_delete(state: ScreenState, delete_at: int) -> None:
+    if not _has_valid_paste_display(state):
+        return
+    assert state.paste_display_start is not None
+    assert state.paste_display_end is not None
+    if delete_at < state.paste_display_start:
+        state.paste_display_start -= 1
+        state.paste_display_end -= 1
+    elif delete_at < state.paste_display_end:
+        _clear_paste_display(state)
+
+
+def _delete_paste_block_before_cursor(state: ScreenState) -> bool:
+    if not _has_valid_paste_display(state):
+        return False
+    assert state.paste_display_start is not None
+    assert state.paste_display_end is not None
+    if state.paste_display_start < state.cursor_offset <= state.paste_display_end:
+        start = state.paste_display_start
+        end = state.paste_display_end
+        state.input = state.input[:start] + state.input[end:]
+        state.cursor_offset = start
+        _clear_paste_display(state)
+        state.selected_slash_index = 0
+        return True
+    return False
+
+
+def _delete_paste_block_at_cursor(state: ScreenState) -> bool:
+    if not _has_valid_paste_display(state):
+        return False
+    assert state.paste_display_start is not None
+    assert state.paste_display_end is not None
+    if state.paste_display_start <= state.cursor_offset < state.paste_display_end:
+        start = state.paste_display_start
+        end = state.paste_display_end
+        state.input = state.input[:start] + state.input[end:]
+        state.cursor_offset = start
+        _clear_paste_display(state)
+        state.selected_slash_index = 0
+        return True
+    return False
+
+
+def _cursor_at_paste_start(state: ScreenState) -> bool:
+    return _has_valid_paste_display(state) and state.cursor_offset == state.paste_display_start
+
+
+def _cursor_at_paste_end(state: ScreenState) -> bool:
+    return _has_valid_paste_display(state) and state.cursor_offset == state.paste_display_end
 
 
 def _win_read_one_key() -> str:
@@ -3293,8 +3533,12 @@ def _handle_input(
 
 
 # ---------------------------------------------------------------------------
-# Main event-driven TTY app
+# Full-screen TUI compatibility entrypoint
 # ---------------------------------------------------------------------------
+#
+# Phase-one package reorganization keeps this module path stable. New UI code
+# should treat it as the full-screen frontend implementation and route through
+# astrid.ui.full.app rather than adding more shell/inline behavior here.
 
 
 def run_tty_app(
@@ -3314,6 +3558,12 @@ def run_tty_app(
         resume_session: Session ID to resume, or "latest" for most recent
         list_sessions_only: If True, print session list and exit
     """
+    if _terminal_mode() == "shell":
+        # The shell/native-scrollback renderer lives in main._run_shell_repl.
+        # If this entrypoint is called directly, keep the boundary strict:
+        # tty_app always owns the screen and input stream.
+        os.environ["ASTRID_TERMINAL_MODE"] = "tui"
+        os.environ["ASTRID_ALT_SCREEN"] = "1"
 
     args = TtyAppArgs(
         runtime=runtime,
@@ -3431,14 +3681,14 @@ def run_tty_app(
             rendered = _screen_writer.render(frame, force_full=not _has_inline_frame)
             bytes_written = len(rendered)
         elif terminal_mode == "shell":
-            if not _has_non_welcome_transcript_entries(state):
-                _sync_welcome_transcript_entry(args, state)
             rendered, _native_transcript_ids, _native_prompt_line_count = _render_agent_frame_update(
                 list(state.transcript),
                 _native_transcript_ids,
                 _build_agent_prompt_region(state),
                 _native_prompt_line_count,
+                preserve_scrollback=True,
             )
+            rendered = _normalize_shell_output_newlines(rendered)
             sys.stdout.write(rendered)
             bytes_written = len(rendered)
         else:
@@ -3473,6 +3723,8 @@ def run_tty_app(
         throttled.request()
 
     input_remainder = ""
+    pending_raw_paste_chunk = ""
+    pending_raw_paste_deadline = 0.0
     should_exit = False
     windows_wheel_fallback = (
         _maybe_start_windows_mouse_wheel_fallback()
@@ -3482,14 +3734,21 @@ def run_tty_app(
     state.wheel_debug_fallback_active = windows_wheel_fallback is not None
     state.wheel_debug_fallback_hook = bool(getattr(windows_wheel_fallback, "_hook_installed", False))
     state.wheel_debug_session_title = getattr(windows_wheel_fallback, "_session_title", None)
-    state.wheel_debug_foreground_title = _win_get_foreground_window_title() if sys.platform == "win32" else None
+    state.wheel_debug_foreground_title = (
+        _win_get_foreground_window_title()
+        if sys.platform == "win32" and windows_wheel_fallback is not None
+        else None
+    )
     # Autosave throttle: check at most every ~2 seconds, not every 20ms
     _autosave_counter = 0
     _AUTOSAVE_CHECK_INTERVAL = 100  # iterations (~2s at 20ms polling)
     _last_animation_tick = time.monotonic()
 
     enter_alternate_screen()
-    hide_cursor()
+    if terminal_mode != "shell":
+        hide_cursor()
+    sys.stdout.write(_BRACKETED_PASTE_ENABLE)
+    sys.stdout.flush()
 
     # On Unix, listen for SIGWINCH so terminal resizes are picked up
     # immediately rather than waiting for the 0.5s cache TTL.
@@ -3512,6 +3771,25 @@ def run_tty_app(
         except (OSError, ValueError):
             # Couldn't set signal handler (e.g. not main thread despite check)
             _prev_sigwinch = None
+
+    def _process_input_chunk(chunk_to_process: str) -> None:
+        nonlocal input_remainder, should_exit
+        parsed = parse_input_chunk(input_remainder + chunk_to_process)
+        input_remainder = parsed.rest
+
+        for event in parsed.events:
+            try:
+                _handle_event(args, state, event, rerender, approval_event, approval_result)
+                if state.input == "/exit":
+                    raise SystemExit(0)
+            except SystemExit:
+                should_exit = True
+                break
+            except Exception as e:
+                logging.debug("Event handling error: %s", e, exc_info=True)
+
+    if terminal_mode == "shell":
+        _sync_welcome_transcript_entry(args, state)
 
     try:
         _render_active_frame()
@@ -3565,11 +3843,20 @@ def run_tty_app(
                         agent_result_data["done"] = False  # Reset flag
                     _drain_next_pending_turn(args, state, rerender)
 
+                if pending_raw_paste_chunk and now >= pending_raw_paste_deadline:
+                    chunk = pending_raw_paste_chunk
+                    pending_raw_paste_chunk = ""
+                    pending_raw_paste_deadline = 0.0
+                    _process_input_chunk(chunk)
+                    throttled.flush()
+                    continue
+
                 # Read raw input
                 if sys.platform == "win32":
                     import msvcrt
 
-                    state.wheel_debug_foreground_title = _win_get_foreground_window_title()
+                    if windows_wheel_fallback is not None:
+                        state.wheel_debug_foreground_title = _win_get_foreground_window_title()
 
                     fallback_events = _win_drain_mouse_fallback_events(
                         windows_wheel_fallback.events if windows_wheel_fallback is not None else None
@@ -3661,20 +3948,17 @@ def run_tty_app(
                 if not chunk:
                     continue
 
-                parsed = parse_input_chunk(input_remainder + chunk)
-                input_remainder = parsed.rest
+                if pending_raw_paste_chunk:
+                    pending_raw_paste_chunk += chunk
+                    pending_raw_paste_deadline = time.monotonic() + _RAW_PASTE_COALESCE_SECONDS
+                    continue
 
-                for event in parsed.events:
-                    try:
-                        _handle_event(args, state, event, rerender, approval_event, approval_result)
-                        if state.input == "/exit":
-                            raise SystemExit(0)
-                    except SystemExit:
-                        should_exit = True
-                        break
-                    except Exception as e:
-                        # 璁板綍浜嬩欢澶勭悊閿欒锛屼絾涓嶄腑鏂富寰幆
-                        logging.debug("Event handling error: %s", e, exc_info=True)
+                if _should_defer_chunk_for_paste_coalescing(chunk):
+                    pending_raw_paste_chunk = chunk
+                    pending_raw_paste_deadline = time.monotonic() + _RAW_PASTE_COALESCE_SECONDS
+                    continue
+
+                _process_input_chunk(chunk)
 
                 # Ensure the final state after processing all events is visible
                 throttled.flush()
@@ -3689,6 +3973,7 @@ def run_tty_app(
         if windows_wheel_fallback is not None:
             windows_wheel_fallback.stop()
 
+        sys.stdout.write(_BRACKETED_PASTE_DISABLE)
         show_cursor()
         exit_alternate_screen()
         if not use_alternate_screen:
@@ -3751,13 +4036,15 @@ def _handle_event(
         approval_event: Threading event for approval synchronization
         approval_result: Dict to store approval decision
     """
-    # ---------- Ctrl+C 鈫?exit ----------
+    # ---------- Ctrl+C 鈫?cancel or confirm exit ----------
     # \x03 is parsed as KeyEvent(name='c', ctrl=True) by parse_input_chunk
     # (CTRL_CHAR_TO_NAME maps \x03 鈫?'c', produces KeyEvent not TextEvent)
     if isinstance(event, KeyEvent) and event.ctrl and event.name == "c":
-        raise SystemExit(0)
+        _handle_ctrl_c(args, state, rerender)
+        return
     if isinstance(event, TextEvent) and event.ctrl and event.text == "c":
-        raise SystemExit(0)
+        _handle_ctrl_c(args, state, rerender)
+        return
 
     # ---------- Pending approval mode ----------
     # Capture locally to avoid TOCTOU 鈥?the agent thread may clear
@@ -3769,6 +4056,29 @@ def _handle_event(
 
     # ---------- Normal mode ----------
     _handle_normal_mode_event(args, state, event, rerender)
+
+
+def _handle_ctrl_c(
+    args: TtyAppArgs,
+    state: ScreenState,
+    rerender: Callable[[], None],
+) -> None:
+    if state.pending_approval is not None or state.is_busy:
+        raise SystemExit(0)
+    if state.input:
+        state.input = ""
+        state.cursor_offset = 0
+        _clear_paste_display(state)
+        state.selected_slash_index = 0
+        state.ctrl_c_exit_armed = True
+        state.status = "Input cleared. Press Ctrl+C again to exit."
+        rerender()
+        return
+    if state.ctrl_c_exit_armed:
+        raise SystemExit(0)
+    state.ctrl_c_exit_armed = True
+    state.status = "Press Ctrl+C again to exit."
+    rerender()
 
 
 # ---------------------------------------------------------------------------
@@ -3953,10 +4263,14 @@ def _handle_normal_mode_event(
     rerender: Callable[[], None],
 ) -> None:
     """Handle input events in normal mode (no pending approval)."""
+    state.ctrl_c_exit_armed = False
     visible_commands = _get_visible_commands(state.input)
     
     if isinstance(event, KeyEvent):
         if _handle_normal_mode_key(args, state, event, visible_commands, rerender):
+            return
+    elif isinstance(event, PasteEvent):
+        if _handle_normal_mode_paste(args, state, event, visible_commands, rerender):
             return
     elif isinstance(event, TextEvent):
         if _handle_normal_mode_text(args, state, event, visible_commands, rerender):
@@ -3978,6 +4292,7 @@ def _handle_normal_mode_key(
         if event.name == "u":
             state.input = ""
             state.cursor_offset = 0
+            _clear_paste_display(state)
             state.selected_slash_index = 0
             rerender()
             return True
@@ -4011,8 +4326,7 @@ def _handle_normal_mode_key(
             return True
 
         if event.name == "v":
-            pasted = _normalize_pasted_text(_read_clipboard_text())
-            if _insert_input_text(state, pasted):
+            if _insert_paste_text(state, _read_clipboard_text()):
                 rerender()
             return True
 
@@ -4084,6 +4398,7 @@ def _handle_normal_mode_return(
         if state.input.strip() != usage:
             state.input = usage
             state.cursor_offset = len(state.input)
+            _clear_paste_display(state)
             state.selected_slash_index = 0
             rerender()
             return
@@ -4091,8 +4406,10 @@ def _handle_normal_mode_return(
     submitted = state.input
     state.input = ""
     state.cursor_offset = 0
+    state.paste_display_start = None
+    state.paste_display_end = None
+    state.paste_display_line_count = 0
     state.selected_slash_index = 0
-    rerender()
     if _handle_input(args, state, rerender, submitted):
         raise SystemExit(0)
     rerender()
@@ -4108,6 +4425,7 @@ def _handle_normal_mode_tab(
     usage = getattr(selected, "usage", str(selected))
     state.input = usage + " "
     state.cursor_offset = len(state.input)
+    _clear_paste_display(state)
     state.selected_slash_index = 0
     rerender()
 
@@ -4119,14 +4437,22 @@ def _handle_normal_mode_navigation(
 ) -> bool:
     """Handle navigation and editing keys. Returns True if handled."""
     if event.name == "backspace" and state.cursor_offset > 0:
+        if _delete_paste_block_before_cursor(state):
+            rerender()
+            return True
         state.input = state.input[:state.cursor_offset - 1] + state.input[state.cursor_offset:]
         state.cursor_offset -= 1
+        _adjust_paste_display_after_delete(state, state.cursor_offset)
         state.selected_slash_index = 0
         rerender()
         return True
     
     if event.name == "delete" and state.cursor_offset < len(state.input):
+        if _delete_paste_block_at_cursor(state):
+            rerender()
+            return True
         state.input = state.input[:state.cursor_offset] + state.input[state.cursor_offset + 1:]
+        _adjust_paste_display_after_delete(state, state.cursor_offset)
         state.selected_slash_index = 0
         rerender()
         return True
@@ -4142,11 +4468,19 @@ def _handle_normal_mode_navigation(
         return True
     
     if event.name == "left":
+        if _cursor_at_paste_end(state):
+            state.cursor_offset = state.paste_display_start or 0
+            rerender()
+            return True
         state.cursor_offset = max(0, state.cursor_offset - 1)
         rerender()
         return True
     
     if event.name == "right":
+        if _cursor_at_paste_start(state):
+            state.cursor_offset = state.paste_display_end or state.cursor_offset
+            rerender()
+            return True
         state.cursor_offset = min(len(state.input), state.cursor_offset + 1)
         rerender()
         return True
@@ -4154,6 +4488,7 @@ def _handle_normal_mode_navigation(
     if event.name == "escape":
         state.input = ""
         state.cursor_offset = 0
+        _clear_paste_display(state)
         state.selected_slash_index = 0
         rerender()
         return True
@@ -4205,6 +4540,20 @@ def _handle_normal_mode_text(
         return True
     
     return False
+
+
+def _handle_normal_mode_paste(
+    args: TtyAppArgs,
+    state: ScreenState,
+    event: PasteEvent,
+    visible_commands: list,
+    rerender: Callable[[], None],
+) -> bool:
+    """Handle bracketed paste as literal input, including newlines."""
+    if not _insert_paste_text(state, event.text):
+        return False
+    rerender()
+    return True
 
 
 def _handle_normal_mode_wheel(

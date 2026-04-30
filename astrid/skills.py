@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from hashlib import sha256
 
 
 @dataclass(slots=True)
@@ -43,11 +46,111 @@ def _user_skills_root() -> Path:
     return _home_dir() / ".astrid" / "skills"
 
 
+def _default_backing_skills_root() -> Path:
+    if sys.platform == "win32":
+        return Path("F:/funnyskills/astrid-skills")
+    return _user_skills_root()
+
+
 def _external_skills_root() -> Path:
     configured = os.environ.get("ASTRID_SKILLS_ROOT")
     if configured:
         return Path(configured)
-    return _user_skills_root()
+    return _default_backing_skills_root()
+
+
+def _workspace_id(cwd: str | Path) -> str:
+    try:
+        resolved = str(Path(cwd).resolve())
+    except OSError:
+        resolved = str(Path(cwd))
+    key = resolved.lower() if sys.platform == "win32" else resolved
+    return sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _project_state_skills_root(cwd: str | Path) -> Path:
+    return _home_dir() / ".astrid" / "projects" / _workspace_id(cwd) / "skills"
+
+
+def _is_directory_symlink(path: Path) -> bool:
+    try:
+        return path.is_symlink()
+    except OSError:
+        return False
+
+
+def _link_points_to(path: Path, target: Path) -> bool:
+    try:
+        return path.resolve() == target.resolve()
+    except OSError:
+        return False
+
+
+def _copy_missing_skill_dirs(source_root: Path, target_root: Path) -> None:
+    if not source_root.exists():
+        return
+    target_root.mkdir(parents=True, exist_ok=True)
+    for entry in source_root.iterdir():
+        if not entry.is_dir():
+            continue
+        skill_file = entry / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        target_dir = target_root / entry.name
+        if target_dir.exists():
+            continue
+        shutil.copytree(entry, target_dir)
+
+
+def _backup_path(path: Path) -> Path:
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    candidate = path.with_name(f"{path.name}.backup-{stamp}")
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.backup-{stamp}-{counter}")
+        counter += 1
+    return candidate
+
+
+def _ensure_directory_link(link_path: Path, target_path: Path) -> None:
+    if link_path.exists() or link_path.is_symlink():
+        if _is_directory_symlink(link_path):
+            if _link_points_to(link_path, target_path):
+                return
+            link_path.unlink()
+        else:
+            _copy_missing_skill_dirs(link_path, target_path)
+            link_path.rename(_backup_path(link_path))
+
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        link_path.symlink_to(target_path, target_is_directory=True)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Failed to link Astrid skills entry {link_path} -> {target_path}. "
+            "Create the directory link manually or set ASTRID_SKILLS_ROOT."
+        ) from exc
+
+
+def _ensure_user_skills_entry(backing_root: Path) -> None:
+    user_root = _user_skills_root()
+    if user_root == backing_root:
+        return
+    _ensure_directory_link(user_root, backing_root)
+
+
+def _migrate_legacy_project_skills(cwd: str | Path, backing_root: Path) -> None:
+    legacy_root = Path(cwd) / ".astrid" / "skills"
+    if not legacy_root.exists() or _is_directory_symlink(legacy_root):
+        return
+    _copy_missing_skill_dirs(legacy_root, backing_root)
+    legacy_root.rename(_backup_path(legacy_root))
+    legacy_parent = legacy_root.parent
+    try:
+        if legacy_parent.exists() and not any(legacy_parent.iterdir()):
+            legacy_parent.rmdir()
+    except OSError:
+        pass
 
 
 _DEFAULT_SKILL_FILES: dict[str, str] = {
@@ -79,6 +182,7 @@ Use this when the user gives you an image path or image URL and wants it convert
 def _ensure_external_skill_library() -> Path:
     root = _external_skills_root()
     root.mkdir(parents=True, exist_ok=True)
+    _ensure_user_skills_entry(root)
     for name, content in _DEFAULT_SKILL_FILES.items():
         skill_dir = root / name
         skill_dir.mkdir(parents=True, exist_ok=True)
@@ -89,22 +193,11 @@ def _ensure_external_skill_library() -> Path:
 
 
 def _skill_roots(cwd: str | Path) -> list[tuple[Path, str]]:
-    base = Path(cwd)
-    home = _home_dir()
     external_root = _ensure_external_skill_library()
-    user_root = _user_skills_root()
-    roots: list[tuple[Path, str]] = [(base / ".astrid" / "skills", "project")]
-    if external_root == user_root:
-        roots.append((user_root, "user"))
-    else:
-        roots.append((external_root, "external_user"))
-        roots.append((user_root, "user"))
-    roots.extend(
-        [
-            (base / ".claude" / "skills", "compat_project"),
-            (home / ".claude" / "skills", "compat_user"),
-        ]
-    )
+    _migrate_legacy_project_skills(cwd, external_root)
+    project_root = _project_state_skills_root(cwd)
+    roots: list[tuple[Path, str]] = [(project_root, "project")]
+    roots.append((external_root, "user"))
     return roots
 
 
@@ -166,7 +259,9 @@ def load_skill(cwd: str | Path, name: str) -> LoadedSkill | None:
 
 
 def _managed_skill_root(scope: str, cwd: str | Path) -> Path:
-    return (Path(cwd) / ".astrid" / "skills") if scope == "project" else _external_skills_root()
+    if scope == "project":
+        return _project_state_skills_root(cwd)
+    return _ensure_external_skill_library()
 
 
 def install_skill(cwd: str | Path, source_path: str, name: str | None = None, scope: str = "user") -> dict[str, str]:
