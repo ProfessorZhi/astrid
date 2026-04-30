@@ -98,7 +98,7 @@
 
 第二阶段目标是瘦身 `main.py` 和形成四条前端边界：`shell`、`pipe`、`inline`、`full`。`main.py` 只保留 argparse、管理命令分发、终端模式选择、frontend dispatch 和 shutdown cleanup；runtime 初始化进入 `astrid/runtime/bootstrap.py`，pipe 输入进入 `astrid/ui/shell/pipe.py`，banner/quick start 进入 `astrid/ui/shell/banner.py`。
 
-第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager` 进入 `core`，`history/session/memory` 进入 `state`，`anthropic_adapter/mcp/skills/hooks` 进入 `integrations`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
+第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager/types/tooling/workspace/orchestration/sub_agents` 进入 `core`，`history/session/memory` 进入 `state`，`config/logging/background_tasks/task_tracker/cost_tracker/local_tool_shortcuts` 进入 `runtime`，`anthropic_adapter/mcp/skills/hooks/mock_model/bootstrap_system/skill_engine/terminology_governance/api_retry` 进入 `integrations`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
 
 目标边界：
 
