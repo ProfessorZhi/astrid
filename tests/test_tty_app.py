@@ -2727,7 +2727,7 @@ def test_multi_agent_flow_updates_buddy_runtime_reaction() -> None:
 
 
 def test_tty_app_keeps_single_welcome_render_definition_set() -> None:
-    source = Path("astrid/tty_app.py").read_text(encoding="utf-8")
+    source = Path("src/astrid/tty_app.py").read_text(encoding="utf-8")
 
     assert source.count("def _build_welcome_workbench(") == 1
     assert source.count("def _render_screen(") == 1

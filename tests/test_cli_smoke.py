@@ -10,7 +10,7 @@ from pathlib import Path
 def _smoke_env(repo_root: Path, home: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PYTHONPATH"] = str(repo_root)
+    env["PYTHONPATH"] = str(repo_root / "src")
     env["ASTRID_MODEL_MODE"] = "mock"
     env["USERPROFILE"] = str(home)
     env["HOME"] = str(home)
@@ -28,7 +28,7 @@ def _smoke_env(repo_root: Path, home: Path) -> dict[str, str]:
 def _astrid_module_command(repo_root: Path, *args: str) -> list[str]:
     runner = (
         "import runpy, sys; "
-        f"sys.path.insert(0, {str(repo_root)!r}); "
+        f"sys.path.insert(0, {str(repo_root / 'src')!r}); "
         "sys.argv = ['astrid.main', *sys.argv[1:]]; "
         "runpy.run_module('astrid.main', run_name='__main__')"
     )

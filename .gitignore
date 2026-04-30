@@ -46,8 +46,10 @@ docs-local/
 .tmp_codex_from_app.exe
 .astrid/
 .astrid-memory/
+.astrid-memory.backup-*/
 .workbuddy/
 .lingma/
+test/
 verification/
 verification-smoke-transcript.txt
 

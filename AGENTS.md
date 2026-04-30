@@ -92,22 +92,22 @@
 
 ## Astrid 近期重点
 
-近期进入包内大重组阶段。第一阶段不迁 `src/`，先在现有 `astrid/` 包内理清边界；第二阶段再考虑标准 `src/astrid` 布局。
+近期进入项目结构正规化阶段。第一、二阶段已经先在包内理清 runtime 和 UI 前端边界；第三阶段采用标准 `src/astrid` 布局，避免根目录源码包和测试/临时状态混在一起。
 
 重组顺序固定为：`runtime/controller` → UI frontends → Codex-style inline TUI → Claude-style full TUI。不要继续把 runtime、权限、session、输入、渲染和 shell fallback 都塞进 `main.py` 或 `tty_app.py`。
 
 第二阶段目标是瘦身 `main.py` 和形成四条前端边界：`shell`、`pipe`、`inline`、`full`。`main.py` 只保留 argparse、管理命令分发、终端模式选择、frontend dispatch 和 shutdown cleanup；runtime 初始化进入 `astrid/runtime/bootstrap.py`，pipe 输入进入 `astrid/ui/shell/pipe.py`，banner/quick start 进入 `astrid/ui/shell/banner.py`。
 
-第三阶段再考虑移动高耦合核心模块。不要在第二阶段移动 `agent_loop.py`、`permissions.py`、`memory.py`、`advanced_memory.py`、`mcp.py`、`skills.py`、`tty_app.py` 的主体实现；这些需要单独 PR 和更窄测试。
+第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager` 进入 `core`，`history/session/memory` 进入 `state`，`anthropic_adapter/mcp/skills/hooks` 进入 `integrations`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
 
 目标边界：
 
-- `astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。
-- `astrid/runtime/`：统一 controller、turn runner、事件模型、permission flow、queue/steer 协调。
-- `astrid/ui/`：`shell/`、`inline/`、`full/` 三个终端前端，`common/` 放共享输入、approval、transcript 辅助。
-- `astrid/state/`：session、history、memory、advanced memory 等持久状态。
-- `astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。
-- `astrid/tools/`：暂时保留原位，后续单独整理工具注册和工具实现。
+- `src/astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。
+- `src/astrid/runtime/`：统一 controller、turn runner、事件模型、permission flow、queue/steer 协调。
+- `src/astrid/ui/`：`shell/`、`inline/`、`full/` 三个终端前端，`common/` 放共享输入、approval、transcript 辅助。
+- `src/astrid/state/`：session、history、memory、advanced memory 等持久状态。
+- `src/astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。
+- `src/astrid/tools/`：暂时保留原位，后续单独整理工具注册和工具实现。
 
 近期不要平均用力，优先做三件事：补上权限系统、产品化自动化测试、重构 TUI。每件事开工前都要先对照本地 Codex 和 Claude Code 源码。
 
