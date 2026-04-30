@@ -204,7 +204,7 @@ state = ScreenState(
 
 ### 步骤 1: 添加 /cost 命令
 
-编辑 `astrid/cli_commands.py`，添加：
+编辑 `src/astrid/cli/cli_commands.py`，添加：
 
 ```python
 @dataclass
@@ -236,7 +236,7 @@ class StatusCommand:
 
 ### 步骤 3: 在 agent loop 中记录费用
 
-编辑 `astrid/agent_loop.py`，在 API 调用后添加：
+编辑 `src/astrid/core/agent_loop.py`，在 API 调用后添加：
 
 ```python
 # 在 run_agent_turn 中，收到 API 响应后：
@@ -253,7 +253,7 @@ if state.cost_tracker and api_response.usage:
 
 ### 步骤 4: 在工具执行时记录代码变更
 
-编辑 `astrid/tty_app.py` 的 `on_tool_result` 回调：
+编辑 `src/astrid/ui/full/tty_app.py` 的 `on_tool_result` 回调：
 
 ```python
 def on_tool_result(tool_name: str, output: str, is_error: bool) -> None:

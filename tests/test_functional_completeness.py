@@ -133,21 +133,21 @@ class TestPermissionSystem:
 
     def test_path_access_within_cwd_allowed(self):
         """Test that path access within cwd is allowed."""
-        from astrid.permissions import PermissionManager
+        from astrid.runtime.permissions import PermissionManager
         pm = PermissionManager(workspace_root="/test/cwd")
         # Should not raise
         pm.ensure_path_access("/test/cwd/file.txt", "read")
 
     def test_path_access_outside_cwd_denied_without_prompt(self):
         """Test that path access outside cwd is denied when no prompt."""
-        from astrid.permissions import PermissionManager
+        from astrid.runtime.permissions import PermissionManager
         pm = PermissionManager(workspace_root="/test/cwd")
         with pytest.raises(RuntimeError, match="outside cwd"):
             pm.ensure_path_access("/etc/passwd", "read")
 
     def test_dangerous_command_detection(self):
         """Test that dangerous commands are detected."""
-        from astrid.permissions import _classify_dangerous_command
+        from astrid.runtime.permissions import _classify_dangerous_command
         # Git dangerous commands
         result = _classify_dangerous_command("git", ["reset", "--hard"])
         assert result is not None

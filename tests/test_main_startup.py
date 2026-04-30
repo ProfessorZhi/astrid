@@ -91,7 +91,7 @@ def _patch_common_main_dependencies(monkeypatch, stdin) -> list[str]:
     monkeypatch.setattr(main_module, "load_runtime_config", lambda cwd: None)
     monkeypatch.setattr(main_module, "MockModelAdapter", lambda: object())
     monkeypatch.setattr("astrid.state.memory.MemoryManager", _FakeMemoryManager)
-    monkeypatch.setattr("astrid.advanced_memory.create_memory_integration", lambda *args, **kwargs: _FakeMemoryIntegration())
+    monkeypatch.setattr("astrid.state.advanced_memory.create_memory_integration", lambda *args, **kwargs: _FakeMemoryIntegration())
     monkeypatch.setattr("astrid.integrations.skill_engine.create_default_skill_engine", lambda advanced_memory_mgr: object())
     monkeypatch.setattr(
         "astrid.integrations.terminology_governance.create_terminology_governance_system",
@@ -108,7 +108,7 @@ def _patch_common_main_dependencies(monkeypatch, stdin) -> list[str]:
     monkeypatch.setattr(main_module, "build_system_prompt", lambda *args, **kwargs: "system-prompt")
     monkeypatch.setattr(main_module, "load_history_entries", lambda workspace=None: [])
     monkeypatch.setattr(main_module, "save_history_entries", lambda history, workspace=None: None)
-    monkeypatch.setattr("astrid.agent_loop.set_advanced_memory", lambda advanced_memory_mgr: None)
+    monkeypatch.setattr("astrid.core.agent_loop.set_advanced_memory", lambda advanced_memory_mgr: None)
     monkeypatch.setattr(main_module, "run_tty_app", lambda **kwargs: None)
     monkeypatch.setattr(main_module, "_run_shell_repl", lambda **kwargs: kwargs["messages"])
     return printed

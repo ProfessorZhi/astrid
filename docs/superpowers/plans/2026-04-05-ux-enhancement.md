@@ -12,9 +12,9 @@
 
 ## 文件结构
 
-- 修改：`astrid/tty_app.py` - 添加上下文帮助和状态提示
+- 修改：`src/astrid/ui/full/tty_app.py` - 添加上下文帮助和状态提示
 - 修改：`astrid/main.py` - 增强启动引导
-- 修改：`astrid/cli_commands.py` - 优化帮助信息
+- 修改：`src/astrid/cli/cli_commands.py` - 优化帮助信息
 - 创建：无新文件，遵循现有代码模式
 
 ---
@@ -22,7 +22,7 @@
 ### 任务 1：添加上下文帮助系统
 
 **文件：**
-- 修改：`astrid/tty_app.py:300-320`
+- 修改：`src/astrid/ui/full/tty_app.py:300-320`
 
 - [ ] **步骤 1：添加上下文帮助函数**
 
@@ -58,7 +58,7 @@ def _get_contextual_help(state: ScreenState, args: TtyAppArgs) -> str | None:
 ### 任务 2：增强 Footer 状态栏
 
 **文件：**
-- 修改：`astrid/tui/chrome.py:render_footer_bar`
+- 修改：`src/astrid/tui/chrome.py:render_footer_bar`
 
 - [ ] **步骤 1：添加快捷键提示到 footer**
 
@@ -81,7 +81,7 @@ def render_footer_bar(
 ### 任务 3：工具执行进度优化
 
 **文件：**
-- 修改：`astrid/tty_app.py:on_tool_start, on_tool_result`
+- 修改：`src/astrid/ui/full/tty_app.py:on_tool_start, on_tool_result`
 
 - [ ] **步骤 1：添加工执行时间显示**
 
@@ -95,7 +95,7 @@ def on_tool_start(tool_name: str, tool_input: Any) -> None:
 ### 任务 4：错误恢复引导
 
 **文件：**
-- 修改：`astrid/tty_app.py:on_tool_result`
+- 修改：`src/astrid/ui/full/tty_app.py:on_tool_result`
 
 - [ ] **步骤 1：工具失败时显示建议**
 

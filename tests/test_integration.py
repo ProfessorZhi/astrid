@@ -23,9 +23,9 @@ import pytest
 # Ensure py-src is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from astrid.agent_loop import run_agent_turn
+from astrid.core.agent_loop import run_agent_turn
 from astrid.integrations.mock_model import MockModelAdapter
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.integrations.skills import install_skill
 from astrid.core.tooling import ToolContext, ToolRegistry, ToolDefinition, ToolResult
 from astrid.tools import create_default_tool_registry

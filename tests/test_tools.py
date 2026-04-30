@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.tools.run_command import _build_execution_command, split_command_line
 from astrid.tools.patch_file import patch_file_tool
 from astrid.tools.multi_edit import multi_edit_tool

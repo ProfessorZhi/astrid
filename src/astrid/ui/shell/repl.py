@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from astrid.runtime.controller import RuntimeController
+from astrid.tui.types import TranscriptEntry
+from astrid.ui.common.frontend import FrontendRuntime
 from astrid.ui.common.text_input import normalize_cli_input
 
 
@@ -36,3 +38,29 @@ def run_shell_repl(
             break
         messages = next_messages
     return messages
+
+
+class ShellFrontend:
+    """Native shell fallback frontend.
+
+    This frontend is intentionally thin: it reads lines and delegates every
+    command/turn to RuntimeController.
+    """
+
+    name = "shell"
+
+    def __init__(
+        self,
+        *,
+        input_reader: Callable[[str], str] | None = None,
+        intro: str | None = None,
+    ) -> None:
+        self.input_reader = input_reader
+        self.intro = intro
+
+    def run(self, runtime: FrontendRuntime) -> list[dict[str, str]] | None:
+        return run_shell_repl(
+            controller=runtime.controller,
+            input_reader=self.input_reader,
+            intro=self.intro,
+        )

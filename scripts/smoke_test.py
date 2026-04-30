@@ -7,7 +7,7 @@ from astrid.tui.transcript import render_transcript, get_transcript_window_size
 from astrid.tui.markdown import render_markdownish
 from astrid.tui.input_parser import parse_input_chunk
 from astrid.tui.types import TranscriptEntry
-from astrid.tty_app import _ThrottledRenderer, _get_terminal_size
+from astrid.ui.full.tty_app import _ThrottledRenderer, _get_terminal_size
 
 # Test cached terminal size
 cols, rows = _cached_terminal_size()

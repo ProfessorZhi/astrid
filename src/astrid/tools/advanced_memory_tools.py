@@ -40,7 +40,7 @@ def _memory_search_run(input_data: dict, context) -> ToolResult:
     if not _advanced_memory_mgr:
         return ToolResult(ok=False, output="Advanced memory system not initialized")
 
-    from astrid.advanced_memory import MemoryScope
+    from astrid.state.advanced_memory import MemoryScope
     query = input_data["query"]
     scope = None
     if input_data.get("scope"):
@@ -111,7 +111,7 @@ def _memory_store_run(input_data: dict, context) -> ToolResult:
     if not _advanced_memory_mgr:
         return ToolResult(ok=False, output="Advanced memory system not initialized")
 
-    from astrid.advanced_memory import MemoryScope, MemoryType, MemoryPriority
+    from astrid.state.advanced_memory import MemoryScope, MemoryType, MemoryPriority
 
     try:
         scope = MemoryScope(input_data["scope"])

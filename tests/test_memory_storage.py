@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from astrid import advanced_memory as advanced_memory_mod
+from astrid.state import advanced_memory as advanced_memory_mod
 from astrid.state import memory as memory_mod
-from astrid.advanced_memory import AdvancedMemoryManager, MemoryScope as AdvancedScope
+from astrid.state.advanced_memory import AdvancedMemoryManager, MemoryScope as AdvancedScope
 from astrid.cli.cli_commands import try_handle_local_command
 from astrid.state.memory import MemoryManager, MemoryScope
 from astrid.core.prompt import build_system_prompt

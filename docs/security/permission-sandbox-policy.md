@@ -89,7 +89,7 @@ Until those modes exist in runtime code, they are design labels only.
 
 ## Programmatic Snapshot
 
-`astrid.permissions.get_permission_policy_snapshot()` exposes the current
+`astrid.runtime.permissions.get_permission_policy_snapshot()` exposes the current
 policy boundary as structured data. Tests assert that the snapshot marks prompt,
 command, and edit policy layers as enforced, while marking OS sandbox support as
 not enforced.

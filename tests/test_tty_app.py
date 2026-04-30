@@ -1,4 +1,4 @@
-from astrid.tty_app import (
+from astrid.ui.full.tty_app import (
     TtyAppArgs,
     ScreenState,
     _is_multi_agent_candidate,
@@ -49,7 +49,7 @@ from astrid.tui.screen_diff import LineDiffScreenWriter
 from astrid.tui.buddy_state import build_buddy_profile
 from astrid.tui.input_parser import KeyEvent
 from astrid.integrations.mock_model import MockModelAdapter
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.core.prompt import build_system_prompt
 from astrid.tools import create_default_tool_registry
 from astrid.tui.chrome import strip_ansi
@@ -153,10 +153,10 @@ def test_win_drain_mouse_fallback_events_returns_pending_wheels() -> None:
 
 
 def test_shell_mode_skips_windows_mouse_fallback(monkeypatch) -> None:
-    monkeypatch.setattr("astrid.tty_app.sys.platform", "win32")
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.platform", "win32")
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
 
-    from astrid.tty_app import _maybe_start_windows_mouse_wheel_fallback
+    from astrid.ui.full.tty_app import _maybe_start_windows_mouse_wheel_fallback
 
     assert _maybe_start_windows_mouse_wheel_fallback() is None
 
@@ -248,7 +248,7 @@ def test_handle_normal_mode_key_pastes_clipboard_text(monkeypatch) -> None:
     state = ScreenState(history=[], input="hello ", cursor_offset=6)
     rerenders: list[str] = []
 
-    monkeypatch.setattr("astrid.tty_app._read_clipboard_text", lambda: "world")
+    monkeypatch.setattr("astrid.ui.full.tty_app._read_clipboard_text", lambda: "world")
 
     handled = _handle_normal_mode_key(
         args,
@@ -302,7 +302,7 @@ def test_read_clipboard_text_configures_64_bit_windows_api(monkeypatch) -> None:
     fake_ctypes.wstring_at = _fake_wstring_at
     fake_ctypes.wintypes = fake_wintypes
 
-    monkeypatch.setattr("astrid.tty_app.sys.platform", "win32")
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.platform", "win32")
     monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
     monkeypatch.setitem(sys.modules, "ctypes.wintypes", fake_wintypes)
 
@@ -327,7 +327,7 @@ def test_handle_normal_mode_key_ctrl_v_compresses_multiline_clipboard(monkeypatc
     state = ScreenState(history=[], input="hello ", cursor_offset=6)
     rerenders: list[str] = []
 
-    monkeypatch.setattr("astrid.tty_app._read_clipboard_text", lambda: "line1\nline2")
+    monkeypatch.setattr("astrid.ui.full.tty_app._read_clipboard_text", lambda: "line1\nline2")
 
     handled = _handle_normal_mode_key(
         args,
@@ -893,7 +893,7 @@ def test_shell_mode_disables_periodic_animation_repaints_to_preserve_scrollback(
 
 
 def test_codex_terminal_uses_native_scrollback_for_tty_loop(monkeypatch) -> None:
-    from astrid.tty_app import _terminal_mode_label
+    from astrid.ui.full.tty_app import _terminal_mode_label
     from astrid.tui.screen import _terminal_mode
 
     monkeypatch.setenv("CODEX_SHELL", "1")
@@ -906,7 +906,7 @@ def test_codex_terminal_uses_native_scrollback_for_tty_loop(monkeypatch) -> None
 
 
 def test_windows_terminal_defaults_to_native_scrollback_for_tty_loop(monkeypatch) -> None:
-    from astrid.tty_app import _terminal_mode_label
+    from astrid.ui.full.tty_app import _terminal_mode_label
     from astrid.tui.screen import _terminal_mode
 
     monkeypatch.setattr("astrid.tui.screen.sys.platform", "win32")
@@ -917,7 +917,7 @@ def test_windows_terminal_defaults_to_native_scrollback_for_tty_loop(monkeypatch
 
 
 def test_terminal_mode_label_treats_agent_as_shell_for_users(monkeypatch) -> None:
-    from astrid.tty_app import _terminal_mode_label
+    from astrid.ui.full.tty_app import _terminal_mode_label
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "agent")
 
@@ -952,7 +952,7 @@ def test_build_screen_simple_keeps_prompt_visible_while_scrolling_transcript(mon
     )
     state.transcript_scroll_offset = 0
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 10))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 10))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
 
@@ -984,12 +984,12 @@ def test_build_screen_simple_uses_windowed_transcript_renderer(monkeypatch) -> N
         cursor_offset=5,
     )
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 12))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 12))
 
     def fail_full_render(entries):
         raise AssertionError(f"full transcript render called for {len(entries)} entries")
 
-    monkeypatch.setattr("astrid.tty_app.render_transcript_simple", fail_full_render)
+    monkeypatch.setattr("astrid.ui.full.tty_app.render_transcript_simple", fail_full_render)
 
     rendered = strip_ansi(_build_screen_simple(args, state))
 
@@ -1018,12 +1018,12 @@ def test_get_max_transcript_scroll_offset_uses_transcript_line_counts(monkeypatc
         cursor_offset=5,
     )
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 12))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 12))
 
     def fail_page_builder(*args, **kwargs):
         raise AssertionError("max scroll rebuilt the full page")
 
-    monkeypatch.setattr("astrid.tty_app._build_simple_page_flow_document", fail_page_builder)
+    monkeypatch.setattr("astrid.ui.full.tty_app._build_simple_page_flow_document", fail_page_builder)
 
     assert _get_max_transcript_scroll_offset(args, state) > 0
 
@@ -1065,7 +1065,7 @@ def test_build_screen_simple_keeps_prompt_in_document_flow_when_not_scrolled(mon
     )
     state.transcript_scroll_offset = 0
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 12))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 12))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
     lines = rendered.splitlines()
@@ -1095,7 +1095,7 @@ def test_build_screen_simple_without_footer_keeps_prompt_after_content(monkeypat
     )
     state.transcript_scroll_offset = 0
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 12))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 12))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
     lines = rendered.splitlines()
@@ -1122,7 +1122,7 @@ def test_build_screen_simple_does_not_pad_short_transcript_to_terminal_height(mo
         cursor_offset=5,
     )
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 16))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 16))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
     lines = rendered.splitlines()
@@ -1154,7 +1154,7 @@ def test_build_screen_simple_keeps_prompt_pinned_while_scrolling_document(monkey
     )
     state.transcript_scroll_offset = 10
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 16))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 16))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
     lines = rendered.splitlines()
@@ -1185,7 +1185,7 @@ def test_build_screen_simple_no_longer_renders_dedicated_bottom_region_separator
     )
     state.transcript_scroll_offset = 0
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 16))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 16))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
     lines = rendered.splitlines()
@@ -1199,7 +1199,7 @@ def test_inline_mode_does_not_record_progress_entries() -> None:
 
 
 def test_handle_normal_mode_wheel_scrolls_explicit_tui_mode_both_directions(monkeypatch) -> None:
-    from astrid.tty_app import _handle_normal_mode_wheel
+    from astrid.ui.full.tty_app import _handle_normal_mode_wheel
 
     cwd = str(Path(".").resolve())
     permissions = PermissionManager(cwd, prompt=lambda request: {"decision": "allow_once"})
@@ -1221,7 +1221,7 @@ def test_handle_normal_mode_wheel_scrolls_explicit_tui_mode_both_directions(monk
     rerenders: list[str] = []
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
     monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 8))
 
     handled_up = _handle_normal_mode_wheel(args, state, WheelEvent(direction="up"), lambda: rerenders.append("up"))
     assert handled_up is True
@@ -1255,7 +1255,7 @@ def test_handle_normal_mode_wheel_is_ignored_without_mouse_opt_in(monkeypatch) -
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
     monkeypatch.delenv("ASTRID_ENABLE_MOUSE", raising=False)
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 8))
 
     handled = _handle_normal_mode_wheel(
         args,
@@ -1868,7 +1868,7 @@ def test_handle_input_pet_mode_switches_render_mode() -> None:
 
 def test_handle_companion_command_import_keeps_pet_as_non_persisted_draft(monkeypatch, tmp_path: Path) -> None:
     saved: dict[str, object] = {}
-    monkeypatch.setattr("astrid.tty_app.save_pet_settings", lambda payload: saved.update(payload))
+    monkeypatch.setattr("astrid.ui.full.tty_app.save_pet_settings", lambda payload: saved.update(payload))
     image_path = tmp_path / "pet.png"
     Image.new("RGBA", (8, 8), (40, 180, 255, 255)).save(image_path)
     state = ScreenState(history=[])
@@ -1882,9 +1882,9 @@ def test_handle_companion_command_import_keeps_pet_as_non_persisted_draft(monkey
 
 def test_handle_companion_command_can_save_and_reuse_preset_pet(monkeypatch, tmp_path: Path) -> None:
     library: dict[str, dict[str, str]] = {}
-    monkeypatch.setattr("astrid.tty_app._load_custom_pet_library", lambda: dict(library))
-    monkeypatch.setattr("astrid.tty_app._save_custom_pet_library", lambda payload: library.clear() or library.update(payload))
-    monkeypatch.setattr("astrid.tty_app.save_pet_settings", lambda payload: None)
+    monkeypatch.setattr("astrid.ui.full.tty_app._load_custom_pet_library", lambda: dict(library))
+    monkeypatch.setattr("astrid.ui.full.tty_app._save_custom_pet_library", lambda payload: library.clear() or library.update(payload))
+    monkeypatch.setattr("astrid.ui.full.tty_app.save_pet_settings", lambda payload: None)
 
     image_path = tmp_path / "asuna.png"
     Image.new("RGBA", (8, 8), (220, 120, 180, 255)).save(image_path)
@@ -1912,9 +1912,9 @@ def test_handle_companion_command_can_save_and_reuse_preset_pet(monkeypatch, tmp
 
 def test_handle_companion_command_can_remove_preset_pet(monkeypatch) -> None:
     library: dict[str, dict[str, str]] = {"asuna": {"source": "x", "ansi": "ansi", "ascii": "ascii"}}
-    monkeypatch.setattr("astrid.tty_app._load_custom_pet_library", lambda: dict(library))
-    monkeypatch.setattr("astrid.tty_app._save_custom_pet_library", lambda payload: library.clear() or library.update(payload))
-    monkeypatch.setattr("astrid.tty_app.save_pet_settings", lambda payload: None)
+    monkeypatch.setattr("astrid.ui.full.tty_app._load_custom_pet_library", lambda: dict(library))
+    monkeypatch.setattr("astrid.ui.full.tty_app._save_custom_pet_library", lambda payload: library.clear() or library.update(payload))
+    monkeypatch.setattr("astrid.ui.full.tty_app.save_pet_settings", lambda payload: None)
     state = ScreenState(history=[])
     state.imported_pet_name = "asuna"
     state.imported_pet_ansi = "ansi"
@@ -1944,8 +1944,8 @@ def test_welcome_uses_builtin_buddy_when_import_is_only_a_draft(tmp_path: Path) 
 
 def test_welcome_uses_custom_pet_after_pet_use(monkeypatch) -> None:
     library: dict[str, dict[str, str]] = {"asuna": {"source": "x", "ansi": "ansi-sprite", "ascii": "ascii-sprite"}}
-    monkeypatch.setattr("astrid.tty_app._load_custom_pet_library", lambda: dict(library))
-    monkeypatch.setattr("astrid.tty_app.save_pet_settings", lambda payload: None)
+    monkeypatch.setattr("astrid.ui.full.tty_app._load_custom_pet_library", lambda: dict(library))
+    monkeypatch.setattr("astrid.ui.full.tty_app.save_pet_settings", lambda payload: None)
     state = ScreenState(history=[])
     profile = build_buddy_profile("demo-seed", species_override="duck")
 
@@ -1970,8 +1970,8 @@ def test_render_screen_simple_shows_welcome_workbench_for_fresh_session(monkeypa
     state = ScreenState(history=[])
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -1997,13 +1997,13 @@ def test_render_screen_simple_rotates_welcome_tips_with_animation_frame(monkeypa
     output_a = StringIO()
     output_b = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
 
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output_a)
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output_a)
     state.welcome_tip_index = 0
     _render_screen_simple(args, state)
 
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output_b)
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output_b)
     state.welcome_tip_index = 1
     _render_screen_simple(args, state)
 
@@ -2026,8 +2026,8 @@ def test_render_screen_simple_welcome_uses_runtime_model_name(monkeypatch) -> No
     state = ScreenState(history=[])
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2051,8 +2051,8 @@ def test_render_screen_simple_welcome_shows_shell_mode_label(monkeypatch) -> Non
     output = StringIO()
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2076,7 +2076,7 @@ def test_shell_welcome_entry_can_be_rendered_as_startup_banner(monkeypatch) -> N
     state = ScreenState(history=[])
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (120, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (120, 40))
 
     _sync_welcome_transcript_entry(args, state)
     welcome = _find_welcome_entry(state)
@@ -2101,7 +2101,7 @@ def test_build_screen_simple_keeps_welcome_header_visible_in_short_shell_window(
     state = ScreenState(history=["hello"])
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 8))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 8))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
 
@@ -2125,7 +2125,7 @@ def test_welcome_recent_filters_corrupt_history_entries(monkeypatch) -> None:
     state = ScreenState(history=["\u6d63\u72b2\u30bd", "??", "\u4f60\u597d"])
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "shell")
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (120, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (120, 40))
 
     rendered = strip_ansi(_build_screen_simple(args, state))
 
@@ -2151,8 +2151,8 @@ def test_render_screen_simple_welcome_shows_tui_mode_hint(monkeypatch) -> None:
     output = StringIO()
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2181,9 +2181,9 @@ def test_handle_normal_mode_wheel_scrolls_welcome_view(monkeypatch) -> None:
 
     monkeypatch.setenv("ASTRID_TERMINAL_MODE", "tui")
     monkeypatch.setenv("ASTRID_ENABLE_MOUSE", "1")
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 8))
     monkeypatch.setattr(
-        "astrid.tty_app._build_welcome_workbench",
+        "astrid.ui.full.tty_app._build_welcome_workbench",
         lambda *_args, **_kwargs: "\n".join(f"line {i}" for i in range(12)),
     )
 
@@ -2214,9 +2214,9 @@ def test_build_screen_simple_applies_welcome_scroll_offset(monkeypatch) -> None:
     state = ScreenState(history=[])
     state.transcript_scroll_offset = 2
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (80, 8))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (80, 8))
     monkeypatch.setattr(
-        "astrid.tty_app._build_welcome_workbench",
+        "astrid.ui.full.tty_app._build_welcome_workbench",
         lambda *_args, **_kwargs: "\n".join(f"line {i}" for i in range(8)),
     )
 
@@ -2255,7 +2255,7 @@ def test_handle_input_keeps_single_welcome_entry_once_first_message_starts(monke
     )
     state = ScreenState(history=[])
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
 
     should_exit = _handle_input(args, state, lambda: None, submitted_raw_input="hello")
 
@@ -2306,7 +2306,7 @@ def test_handle_input_drops_progress_entries_after_final_answer(monkeypatch, tmp
         kwargs["on_assistant_message"]("Final answer")
         return kwargs["messages"] + [{"role": "assistant", "content": "Final answer"}]
 
-    monkeypatch.setattr("astrid.tty_app.run_agent_turn", _fake_run_agent_turn)
+    monkeypatch.setattr("astrid.ui.full.tty_app.run_agent_turn", _fake_run_agent_turn)
 
     should_exit = _handle_input(args, state, lambda: None, submitted_raw_input="who are you")
 
@@ -2346,8 +2346,8 @@ def test_render_screen_simple_keeps_compact_welcome_after_first_message(monkeypa
     )
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2401,8 +2401,8 @@ def test_render_screen_simple_hides_completed_progress_history(monkeypatch) -> N
     )
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2412,11 +2412,11 @@ def test_render_screen_simple_hides_completed_progress_history(monkeypatch) -> N
 
 
 def test_startup_randomizes_builtin_welcome_pet(monkeypatch) -> None:
-    monkeypatch.setattr("astrid.tty_app.load_pet_settings", lambda: {"companionEnabled": True})
-    monkeypatch.setattr("astrid.tty_app.random.choice", lambda species: "robot")
+    monkeypatch.setattr("astrid.ui.full.tty_app.load_pet_settings", lambda: {"companionEnabled": True})
+    monkeypatch.setattr("astrid.ui.full.tty_app.random.choice", lambda species: "robot")
 
     state = ScreenState(history=[])
-    from astrid.tty_app import _apply_startup_pet_state
+    from astrid.ui.full.tty_app import _apply_startup_pet_state
 
     _apply_startup_pet_state(state)
 
@@ -2426,7 +2426,7 @@ def test_startup_randomizes_builtin_welcome_pet(monkeypatch) -> None:
 
 def test_startup_keeps_active_imported_pet_instead_of_randomizing(monkeypatch) -> None:
     monkeypatch.setattr(
-        "astrid.tty_app.load_pet_settings",
+        "astrid.ui.full.tty_app.load_pet_settings",
         lambda: {
             "companionEnabled": True,
             "companionSpecies": "duck",
@@ -2438,10 +2438,10 @@ def test_startup_keeps_active_imported_pet_instead_of_randomizing(monkeypatch) -
             "importedPetActive": True,
         },
     )
-    monkeypatch.setattr("astrid.tty_app.random.choice", lambda species: "robot")
+    monkeypatch.setattr("astrid.ui.full.tty_app.random.choice", lambda species: "robot")
 
     state = ScreenState(history=[])
-    from astrid.tty_app import _apply_startup_pet_state
+    from astrid.ui.full.tty_app import _apply_startup_pet_state
 
     _apply_startup_pet_state(state)
 
@@ -2491,8 +2491,8 @@ def test_render_screen_simple_shows_buddy_overlay_in_active_view(monkeypatch) ->
     state.buddy_runtime.reaction_until = 9999999999.0
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2521,8 +2521,8 @@ def test_render_screen_simple_shows_busy_thinking_line_for_single_agent_turn(mon
     )
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2563,8 +2563,8 @@ def test_render_screen_simple_keeps_busy_line_visible_when_progress_is_visible(m
     )
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2595,13 +2595,13 @@ def test_render_screen_simple_animates_busy_thinking_line_frames(monkeypatch) ->
     output_a = StringIO()
     output_b = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
 
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output_a)
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output_a)
     state.animation_frame = 0
     _render_screen_simple(args, state)
 
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output_b)
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output_b)
     state.animation_frame = 1
     _render_screen_simple(args, state)
 
@@ -2633,13 +2633,13 @@ def test_render_screen_simple_uses_full_clear_and_no_duplicate_busy_footer(monke
     output_a = StringIO()
     output_b = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
 
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output_a)
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output_a)
     state.animation_frame = 0
     _render_screen_simple(args, state)
 
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output_b)
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output_b)
     state.animation_frame = 1
     _render_screen_simple(args, state)
 
@@ -2671,8 +2671,8 @@ def test_render_screen_simple_shows_busy_layout_without_transcript(monkeypatch) 
     )
     output = StringIO()
 
-    monkeypatch.setattr("astrid.tty_app._get_terminal_size", lambda: (100, 40))
-    monkeypatch.setattr("astrid.tty_app.sys.stdout", output)
+    monkeypatch.setattr("astrid.ui.full.tty_app._get_terminal_size", lambda: (100, 40))
+    monkeypatch.setattr("astrid.ui.full.tty_app.sys.stdout", output)
 
     _render_screen_simple(args, state)
 
@@ -2727,7 +2727,7 @@ def test_multi_agent_flow_updates_buddy_runtime_reaction() -> None:
 
 
 def test_tty_app_keeps_single_welcome_render_definition_set() -> None:
-    source = Path("src/astrid/tty_app.py").read_text(encoding="utf-8")
+    source = Path("src/astrid/ui/full/tty_app.py").read_text(encoding="utf-8")
 
     assert source.count("def _build_welcome_workbench(") == 1
     assert source.count("def _render_screen(") == 1

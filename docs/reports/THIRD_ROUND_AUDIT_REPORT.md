@@ -279,7 +279,7 @@ def run_agent_sync(self, agent_id: str, model: ModelAdapter,
     if not instance or instance.status != "running":
         return instance
 
-    from astrid.agent_loop import run_agent_turn
+    from astrid.core.agent_loop import run_agent_turn
 
     try:
         messages = run_agent_turn(

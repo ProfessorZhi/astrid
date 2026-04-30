@@ -15,7 +15,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 from pathlib import Path
 
-from astrid.advanced_memory import AdvancedMemoryManager, TerminologyEntry, MemoryScope, MemoryType
+from astrid.state.advanced_memory import AdvancedMemoryManager, TerminologyEntry, MemoryScope, MemoryType
 
 
 # ---------------------------------------------------------------------------

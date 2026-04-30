@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Callable, Union, Set
 from pathlib import Path
 from functools import wraps
 
-from astrid.advanced_memory import AdvancedMemoryManager, SkillDefinition, MemoryEntry, MemoryScope, MemoryType
+from astrid.state.advanced_memory import AdvancedMemoryManager, SkillDefinition, MemoryEntry, MemoryScope, MemoryType
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from typing import Callable
 
 from astrid.core.context_manager import ContextManager, estimate_message_tokens
 from astrid.runtime.logging_config import get_logger
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.core.tooling import ToolContext, ToolRegistry
 from astrid.core.types import AgentStep, ChatMessage, ModelAdapter
 
@@ -94,7 +94,7 @@ def _auto_store_insights(insights: list[dict], cwd: str) -> None:
     if not _advanced_memory_mgr or not insights:
         return
     
-    from astrid.advanced_memory import MemoryScope, MemoryType, MemoryPriority
+    from astrid.state.advanced_memory import MemoryScope, MemoryType, MemoryPriority
     
     for insight in insights:
         try:

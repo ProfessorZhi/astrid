@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
-from astrid.agent_loop import run_agent_turn
+from astrid.core.agent_loop import run_agent_turn
 from astrid.core.context_manager import ContextManager
 from astrid.state import AppState, Store
 from astrid.core.tooling import ToolDefinition, ToolRegistry

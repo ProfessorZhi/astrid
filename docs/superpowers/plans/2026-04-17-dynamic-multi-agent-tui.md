@@ -12,13 +12,13 @@
 
 ## 文件结构
 
-- 新建：`astrid/orchestration.py` - 定义 orchestrator runtime、任务状态机、worker 元数据、事件模型
+- 新建：`src/astrid/core/orchestration.py` - 定义 orchestrator runtime、任务状态机、worker 元数据、事件模型
 - 新建：`tests/test_orchestration.py` - 覆盖状态流转、spawn 策略、review 触发、归档逻辑
-- 修改：`astrid/sub_agents.py` - 从“惰性对象管理器”升级为可执行 worker manager，补齐 worker 运行入口与结构化结果
-- 修改：`astrid/tty_app.py` - 接入 orchestrator 状态、后台 worker 执行、agent tree 与 narrative line 状态更新
-- 修改：`astrid/tui/transcript.py` - 渲染 narrative line、agent tree、worker 事件摘要
-- 修改：`astrid/tui/chrome.py` - 增加轻量状态条与 agent accent color 支持
-- 修改：`astrid/tui/types.py` - 如有需要扩展 transcript entry/agent tree 渲染数据结构
+- 修改：`src/astrid/core/sub_agents.py` - 从“惰性对象管理器”升级为可执行 worker manager，补齐 worker 运行入口与结构化结果
+- 修改：`src/astrid/ui/full/tty_app.py` - 接入 orchestrator 状态、后台 worker 执行、agent tree 与 narrative line 状态更新
+- 修改：`src/astrid/tui/transcript.py` - 渲染 narrative line、agent tree、worker 事件摘要
+- 修改：`src/astrid/tui/chrome.py` - 增加轻量状态条与 agent accent color 支持
+- 修改：`src/astrid/tui/types.py` - 如有需要扩展 transcript entry/agent tree 渲染数据结构
 - 修改：`tests/test_tui.py` - 验证 agent tree、narrative line、颜色/摘要显示
 - 修改：`tests/test_agent_loop.py` - 补 worker 报告与 reviewer 回路相关回调集成测试
 
@@ -27,7 +27,7 @@
 ### 任务 1：建立多 Agent 运行时状态机
 
 **文件：**
-- 新建：`astrid/orchestration.py`
+- 新建：`src/astrid/core/orchestration.py`
 - 测试：`tests/test_orchestration.py`
 
 - [ ] **步骤 1：先写运行时状态与事件的失败测试**
@@ -200,7 +200,7 @@ PASSED tests/test_orchestration.py::test_runtime_moves_to_reviewing_after_all_wo
 - [ ] **步骤 5：提交**
 
 ```bash
-git add astrid/orchestration.py tests/test_orchestration.py
+git add src/astrid/core/orchestration.py tests/test_orchestration.py
 git commit -m "feat: add orchestrator runtime state machine"
 ```
 
@@ -209,14 +209,14 @@ git commit -m "feat: add orchestrator runtime state machine"
 ### 任务 2：让 SubAgentManager 真的执行 worker
 
 **文件：**
-- 修改：`astrid/sub_agents.py`
+- 修改：`src/astrid/core/sub_agents.py`
 - 测试：`tests/test_orchestration.py`
 
 - [ ] **步骤 1：先写 worker 执行与结构化结果的失败测试**
 
 ```python
 from astrid.sub_agents import AgentType, SubAgentManager
-from astrid.agent_loop import run_agent_turn
+from astrid.core.agent_loop import run_agent_turn
 from astrid.types import AgentStep
 
 
@@ -255,7 +255,7 @@ FAIL ... AttributeError: 'SubAgentManager' object has no attribute 'execute_agen
 - [ ] **步骤 3：为 SubAgentManager 增加最小 execute_agent 实现**
 
 ```python
-from astrid.agent_loop import run_agent_turn
+from astrid.core.agent_loop import run_agent_turn
 from astrid.tooling import ToolRegistry, ToolDefinition, ToolContext
 
 
@@ -315,7 +315,7 @@ PASSED tests/test_orchestration.py::test_compile_result_summary_includes_worker_
 
 提交：
 ```bash
-git add astrid/sub_agents.py tests/test_orchestration.py
+git add src/astrid/core/sub_agents.py tests/test_orchestration.py
 git commit -m "feat: execute spawned sub-agents"
 ```
 
@@ -324,7 +324,7 @@ git commit -m "feat: execute spawned sub-agents"
 ### 任务 3：接入 orchestrator 到 TTY 主流程
 
 **文件：**
-- 修改：`astrid/tty_app.py`
+- 修改：`src/astrid/ui/full/tty_app.py`
 - 测试：`tests/test_agent_loop.py`
 
 - [ ] **步骤 1：先写 TTY 层接入 orchestrator 的失败测试**
@@ -411,7 +411,7 @@ PASSED tests/test_orchestration.py::test_runtime_transitions_from_planning_to_sp
 
 提交：
 ```bash
-git add astrid/tty_app.py tests/test_agent_loop.py tests/test_orchestration.py
+git add src/astrid/ui/full/tty_app.py tests/test_agent_loop.py tests/test_orchestration.py
 git commit -m "feat: wire orchestration runtime into tty flow"
 ```
 
@@ -420,9 +420,9 @@ git commit -m "feat: wire orchestration runtime into tty flow"
 ### 任务 4：实现 narrative line 和 agent tree 渲染
 
 **文件：**
-- 修改：`astrid/tui/transcript.py`
-- 修改：`astrid/tui/chrome.py`
-- 修改：`astrid/tui/types.py`
+- 修改：`src/astrid/tui/transcript.py`
+- 修改：`src/astrid/tui/chrome.py`
+- 修改：`src/astrid/tui/types.py`
 - 测试：`tests/test_tui.py`
 
 - [ ] **步骤 1：先写 narrative line 与 agent tree 的失败测试**
@@ -532,7 +532,7 @@ PASSED tests/test_tui.py::test_render_orchestration_block_collapses_archived_wor
 
 提交：
 ```bash
-git add astrid/tui/transcript.py astrid/tui/chrome.py astrid/tui/types.py tests/test_tui.py
+git add src/astrid/tui/transcript.py src/astrid/tui/chrome.py src/astrid/tui/types.py tests/test_tui.py
 git commit -m "feat: render dynamic multi-agent narrative and tree"
 ```
 
@@ -541,9 +541,9 @@ git commit -m "feat: render dynamic multi-agent narrative and tree"
 ### 任务 5：加入 reviewer 回路与归档行为
 
 **文件：**
-- 修改：`astrid/orchestration.py`
-- 修改：`astrid/sub_agents.py`
-- 修改：`astrid/tty_app.py`
+- 修改：`src/astrid/core/orchestration.py`
+- 修改：`src/astrid/core/sub_agents.py`
+- 修改：`src/astrid/ui/full/tty_app.py`
 - 测试：`tests/test_orchestration.py`
 
 - [ ] **步骤 1：先写 reviewer 拒绝后重跑、通过后归档的失败测试**
@@ -635,7 +635,7 @@ PASSED tests/test_tui.py::test_render_orchestration_block_shows_narrative_and_wo
 - [ ] **步骤 5：提交**
 
 ```bash
-git add astrid/orchestration.py astrid/sub_agents.py astrid/tty_app.py tests/test_orchestration.py tests/test_tui.py
+git add src/astrid/core/orchestration.py src/astrid/core/sub_agents.py src/astrid/ui/full/tty_app.py tests/test_orchestration.py tests/test_tui.py
 git commit -m "feat: add reviewer loop and worker archival"
 ```
 

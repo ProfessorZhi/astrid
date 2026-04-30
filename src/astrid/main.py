@@ -5,14 +5,14 @@ import os
 import sys
 from pathlib import Path
 
-from astrid.agent_loop import run_agent_turn, set_advanced_memory
+from astrid.core.agent_loop import run_agent_turn, set_advanced_memory
 from astrid.integrations.anthropic_adapter import AnthropicModelAdapter
 from astrid.cli.cli_commands import find_matching_slash_commands, try_handle_local_command
 from astrid.runtime.config import load_runtime_config
 from astrid.state.history import load_history_entries, save_history_entries
 from astrid.cli.manage_cli import maybe_handle_management_command
 from astrid.integrations.mock_model import MockModelAdapter
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.core.prompt import build_system_prompt
 from astrid.runtime.bootstrap import BootstrapDependencies, initialize_runtime_session
 from astrid.runtime.controller import RuntimeController, append_transcript
@@ -168,7 +168,7 @@ def _make_runtime_controller(
 
 
 def _make_bootstrap_dependencies() -> BootstrapDependencies:
-    from astrid.advanced_memory import create_memory_integration
+    from astrid.state.advanced_memory import create_memory_integration
     from astrid.integrations.bootstrap_system import create_bootstrap_system
     from astrid.core.context_manager import ContextManager
     from astrid.state.memory import MemoryManager

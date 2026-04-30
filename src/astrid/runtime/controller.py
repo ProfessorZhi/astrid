@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from astrid.agent_loop import run_agent_turn as default_run_agent_turn
+from astrid.core.agent_loop import run_agent_turn as default_run_agent_turn
 from astrid.state.history import save_history_entries as default_save_history_entries
 from astrid.runtime.local_tool_shortcuts import parse_local_tool_shortcut
 from astrid.core.prompt import build_system_prompt as default_build_system_prompt

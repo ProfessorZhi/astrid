@@ -98,15 +98,16 @@
 
 第二阶段目标是瘦身 `main.py` 和形成四条前端边界：`shell`、`pipe`、`inline`、`full`。`main.py` 只保留 argparse、管理命令分发、终端模式选择、frontend dispatch 和 shutdown cleanup；runtime 初始化进入 `astrid/runtime/bootstrap.py`，pipe 输入进入 `astrid/ui/shell/pipe.py`，banner/quick start 进入 `astrid/ui/shell/banner.py`。
 
-第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager/types/tooling/workspace/orchestration/sub_agents/async_context/project_instructions/file_review` 进入 `core`，`history/session/memory` 进入 `state`，`config/logging/background_tasks/task_tracker/cost_tracker/local_tool_shortcuts` 进入 `runtime`，`anthropic_adapter/mcp/skills/hooks/mock_model/bootstrap_system/skill_engine/terminology_governance/api_retry/desktop_control` 进入 `integrations`，`cli_commands/manage_cli/install` 进入 `cli`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
+第三阶段已经把根部主体收敛到标准边界：`agent_loop/poly_commands` 进入 `core`，`advanced_memory` 进入 `state`，`permissions/auto_mode` 进入 `runtime`，`tty_app` 进入 `ui/full`。`src/astrid/` 根部只保留 `main.py` 和 `__init__.py`；不要再把功能模块加回根部。
 
-第三阶段后续已经把项目内部 import 改到新路径，并删除上述低风险模块的根部兼容 shim。后续不要为了短期方便重新在 `src/astrid/` 根部添加这些 shim；如果确实需要外部兼容层，要单独说明 public API 兼容目标和删除计划。
+第三阶段后续已经把项目内部 import 改到新路径，并删除根部兼容 shim。后续不要为了短期方便重新在 `src/astrid/` 根部添加 shim；如果确实需要外部兼容层，要单独说明 public API 兼容目标和删除计划。
 
 目标边界：
 
 - `src/astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。
 - `src/astrid/runtime/`：统一 controller、turn runner、事件模型、permission flow、queue/steer 协调。
 - `src/astrid/ui/`：`shell/`、`inline/`、`full/` 三个终端前端，`common/` 放共享输入、approval、transcript 辅助。
+- `src/astrid/ui/common/frontend.py` 定义三前端共享的最小 frontend contract。权限模式、turn 执行、history、transcript、steer/queue 应保持在 `RuntimeController` 和 runtime 层；不要在 shell、inline、full 三个前端各自复制权限逻辑。
 - `src/astrid/cli/`：slash commands、management commands、installer 等命令行入口辅助。
 - `src/astrid/state/`：session、history、memory、advanced memory 等持久状态。
 - `src/astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。

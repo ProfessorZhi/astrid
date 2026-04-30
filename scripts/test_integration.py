@@ -51,8 +51,12 @@ def test(name: str, func):
 def test_import_core():
     """Test core module imports."""
     try:
-        from astrid import agent_loop, config, permissions, prompt, skills
-        from astrid import tooling, mcp, history, workspace
+        from astrid.core import agent_loop, prompt
+        from astrid.integrations import skills
+        from astrid.runtime import config, permissions
+        from astrid.core import tooling, workspace
+        from astrid.integrations import mcp
+        from astrid.state import history
         return True
     except ImportError as e:
         return f"Core import failed: {e}"
@@ -61,10 +65,16 @@ def test_import_core():
 def test_import_new_features():
     """Test new feature imports."""
     try:
-        from astrid import state, cost_tracker, context_manager
-        from astrid import api_retry, task_tracker, memory
-        from astrid import poly_commands, async_context, sub_agents
-        from astrid import auto_mode, hooks, session, install
+        from astrid import state
+        from astrid.core import context_manager
+        from astrid.integrations import api_retry
+        from astrid.runtime import cost_tracker, task_tracker
+        from astrid.state import memory
+        from astrid.cli import install
+        from astrid.core import async_context, poly_commands, sub_agents
+        from astrid.integrations import hooks
+        from astrid.runtime import auto_mode
+        from astrid.state import session
         return True
     except ImportError as e:
         return f"New feature import failed: {e}"
@@ -211,7 +221,7 @@ def test_memory_system():
 
 def test_poly_commands():
     """Test polyorphic command system."""
-    from astrid.poly_commands import (
+    from astrid.core.poly_commands import (
         CommandRegistry, LocalCommand, CommandMetadata, create_builtin_commands
     )
     from astrid.state import create_app_store
@@ -243,7 +253,7 @@ def test_poly_commands():
 
 def test_auto_mode():
     """Test Auto Mode permission system."""
-    from astrid.auto_mode import (
+    from astrid.runtime.auto_mode import (
         AutoModeChecker, PermissionMode, RiskLevel,
         set_permission_mode, get_mode_state
     )

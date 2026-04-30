@@ -24,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
-from astrid.agent_loop import run_agent_turn
+from astrid.core.agent_loop import run_agent_turn
 from astrid.runtime.background_tasks import list_background_tasks
 from astrid.cli.cli_commands import (
     SLASH_COMMANDS,
@@ -49,7 +49,7 @@ from astrid.core.orchestration import (
     request_spawn,
     sample_spinner_verb,
 )
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.core.prompt import build_system_prompt
 from astrid.core.sub_agents import AgentType, SubAgentManager
 from astrid.state.session import (

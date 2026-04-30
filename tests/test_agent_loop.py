@@ -1,4 +1,4 @@
-from astrid.agent_loop import run_agent_turn
+from astrid.core.agent_loop import run_agent_turn
 from astrid.core.tooling import ToolDefinition, ToolRegistry, ToolResult
 from astrid.core.types import AgentStep, ChatMessage, ModelAdapter, StepDiagnostics
 

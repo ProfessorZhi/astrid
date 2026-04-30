@@ -14,7 +14,7 @@ from pathlib import Path
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from astrid.advanced_memory import create_memory_integration, AdvancedMemoryManager
+from astrid.state.advanced_memory import create_memory_integration, AdvancedMemoryManager
 from astrid.integrations.skill_engine import create_default_skill_engine, SkillEngine
 from astrid.integrations.terminology_governance import create_terminology_governance_system
 from astrid.integrations.bootstrap_system import (

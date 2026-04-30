@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from astrid.permissions import PermissionManager, get_permission_policy_snapshot
+from astrid.runtime.permissions import PermissionManager, get_permission_policy_snapshot
 
 
 def test_permission_manager_uses_prompt_for_external_path(tmp_path: Path) -> None:

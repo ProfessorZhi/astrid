@@ -6,23 +6,23 @@
 
 **Architecture:** 保持现有 `tty_app.py` 作为主入口，不推翻当前 transcript/orchestration 主工作流；在其上新增 `idle / welcome view` 分支、独立 buddy 渲染模块和橙色主题 token。welcome 视图只服务于空闲态，进入真实对话或多 agent 运行后回到现有 work view。
 
-**Tech Stack:** Python 3.11+、现有 ANSI TUI 渲染层（`astrid/tui/*.py`）、pytest
+**Tech Stack:** Python 3.11+、现有 ANSI TUI 渲染层（`src/astrid/tui/*.py`）、pytest
 
 ---
 
 ## 文件结构
 
-- 新建：`astrid/tui/buddy.py`
+- 新建：`src/astrid/tui/buddy.py`
   - 负责 18 个 species、sprite 帧定义、idle/fidget/blink 动画选择、buddy 预览与 workbench 左栏渲染
-- 修改：`astrid/tui/chrome.py`
+- 修改：`src/astrid/tui/chrome.py`
   - 新增橙色 welcome theme token、welcome workbench 卡片渲染、顶部品牌线/底部状态线样式收口
-- 修改：`astrid/tui/types.py`
+- 修改：`src/astrid/tui/types.py`
   - 为 transcript/orchestration 条目补充 welcome/work 视图需要的轻状态字段
-- 修改：`astrid/tui/transcript.py`
+- 修改：`src/astrid/tui/transcript.py`
   - 保留现有 orchestration 主体，但让 active work view 的颜色和动态 phase 与新主题更协调
-- 修改：`astrid/tty_app.py`
+- 修改：`src/astrid/ui/full/tty_app.py`
   - 增加 idle/work 视图切换逻辑、buddy 命令处理、动画心跳同步、recent activity 数据来源
-- 修改：`astrid/cli_commands.py`
+- 修改：`src/astrid/cli/cli_commands.py`
   - 将 `/pet` 系列命令注册为正式 slash command，补说明文案
 - 修改：`tests/test_tui.py`
   - 覆盖 welcome card、buddy species、orange theme、动态 phase 文案和双栏布局关键文本
@@ -36,7 +36,7 @@
 ### 任务 1：建立 Buddy v2 数据与多帧动画内核
 
 **Files:**
-- Create: `astrid/tui/buddy.py`
+- Create: `src/astrid/tui/buddy.py`
 - Test: `tests/test_tui.py`
 
 - [ ] **Step 1: 写 buddy species 与多帧行为的失败测试**
@@ -91,7 +91,7 @@ Expected: `ModuleNotFoundError: No module named 'astrid.tui.buddy'`
 - [ ] **Step 3: 最小实现 buddy species、循环切换和多帧选择**
 
 ```python
-# astrid/tui/buddy.py
+# src/astrid/tui/buddy.py
 from __future__ import annotations
 
 BUDDY_SPECIES = (
@@ -151,7 +151,7 @@ Expected: 新增 buddy 相关测试通过
 - [ ] **Step 6: Commit**
 
 ```bash
-git add astrid/tui/buddy.py tests/test_tui.py
+git add src/astrid/tui/buddy.py tests/test_tui.py
 git commit -m "feat: add buddy species and animation core"
 ```
 
@@ -160,7 +160,7 @@ git commit -m "feat: add buddy species and animation core"
 ### 任务 2：重做 welcome workbench 双栏首页
 
 **Files:**
-- Modify: `astrid/tui/chrome.py`
+- Modify: `src/astrid/tui/chrome.py`
 - Test: `tests/test_tui.py`
 
 - [ ] **Step 1: 先写 welcome workbench 渲染失败测试**
@@ -255,7 +255,7 @@ Expected: welcome workbench 相关测试通过
 - [ ] **Step 6: Commit**
 
 ```bash
-git add astrid/tui/chrome.py tests/test_tui.py
+git add src/astrid/tui/chrome.py tests/test_tui.py
 git commit -m "feat: add orange welcome workbench renderer"
 ```
 
@@ -264,13 +264,13 @@ git commit -m "feat: add orange welcome workbench renderer"
 ### 任务 3：接入 idle/work 视图切换
 
 **Files:**
-- Modify: `astrid/tty_app.py`
+- Modify: `src/astrid/ui/full/tty_app.py`
 - Test: `tests/test_tty_app.py`
 
 - [ ] **Step 1: 先写 idle/work 切换失败测试**
 
 ```python
-from astrid.tty_app import ScreenState, _should_show_welcome_view
+from astrid.ui.full.tty_app import ScreenState, _should_show_welcome_view
 
 
 def test_should_show_welcome_view_when_transcript_empty_and_idle() -> None:
@@ -346,7 +346,7 @@ Expected: 相关视图切换测试通过
 - [ ] **Step 7: Commit**
 
 ```bash
-git add astrid/tty_app.py tests/test_tty_app.py
+git add src/astrid/ui/full/tty_app.py tests/test_tty_app.py
 git commit -m "feat: switch between welcome and work views"
 ```
 
@@ -355,8 +355,8 @@ git commit -m "feat: switch between welcome and work views"
 ### 任务 4：把 `/pet` 系列命令接成正式工作流
 
 **Files:**
-- Modify: `astrid/cli_commands.py`
-- Modify: `astrid/tty_app.py`
+- Modify: `src/astrid/cli/cli_commands.py`
+- Modify: `src/astrid/ui/full/tty_app.py`
 - Test: `tests/test_tty_app.py`
 
 - [ ] **Step 1: 先写 `/pet` 指令失败测试**
@@ -423,7 +423,7 @@ Expected: `/pet` 相关测试通过
 - [ ] **Step 6: Commit**
 
 ```bash
-git add astrid/cli_commands.py astrid/tty_app.py tests/test_tty_app.py
+git add src/astrid/cli/cli_commands.py src/astrid/ui/full/tty_app.py tests/test_tty_app.py
 git commit -m "feat: add buddy slash commands"
 ```
 
@@ -432,9 +432,9 @@ git commit -m "feat: add buddy slash commands"
 ### 任务 5：让欢迎页和 orchestration 都有真正的多帧动态感
 
 **Files:**
-- Modify: `astrid/tui/buddy.py`
-- Modify: `astrid/tui/transcript.py`
-- Modify: `astrid/tty_app.py`
+- Modify: `src/astrid/tui/buddy.py`
+- Modify: `src/astrid/tui/transcript.py`
+- Modify: `src/astrid/ui/full/tty_app.py`
 - Test: `tests/test_tui.py`
 - Test: `tests/test_tty_app.py`
 
@@ -495,7 +495,7 @@ Expected: buddy/orchestration 动态测试通过
 - [ ] **Step 6: Commit**
 
 ```bash
-git add astrid/tui/buddy.py astrid/tui/transcript.py astrid/tty_app.py tests/test_tui.py tests/test_tty_app.py
+git add src/astrid/tui/buddy.py src/astrid/tui/transcript.py src/astrid/ui/full/tty_app.py tests/test_tui.py tests/test_tty_app.py
 git commit -m "feat: animate buddy and orchestration progress"
 ```
 
@@ -504,8 +504,8 @@ git commit -m "feat: animate buddy and orchestration progress"
 ### 任务 6：统一首页橙色主题与轻底栏
 
 **Files:**
-- Modify: `astrid/tui/chrome.py`
-- Modify: `astrid/tui/input.py`
+- Modify: `src/astrid/tui/chrome.py`
+- Modify: `src/astrid/tui/input.py`
 - Test: `tests/test_tui.py`
 
 - [ ] **Step 1: 先写橙色主题关键文本的失败测试**
@@ -548,7 +548,7 @@ Expected: theme/welcome 相关测试通过
 - [ ] **Step 6: Commit**
 
 ```bash
-git add astrid/tui/chrome.py astrid/tui/input.py tests/test_tui.py
+git add src/astrid/tui/chrome.py src/astrid/tui/input.py tests/test_tui.py
 git commit -m "feat: add orange welcome shell theme"
 ```
 
@@ -569,7 +569,7 @@ Expected: `... all selected tests pass ...`
 
 - [ ] **Step 2: 跑语法检查**
 
-Run: `python -m py_compile astrid/tui/buddy.py astrid/tui/chrome.py astrid/tui/transcript.py astrid/tty_app.py astrid/cli_commands.py`
+Run: `python -m py_compile src/astrid/tui/buddy.py src/astrid/tui/chrome.py src/astrid/tui/transcript.py src/astrid/ui/full/tty_app.py src/astrid/cli/cli_commands.py`
 
 Expected: 无输出、退出码 0
 

@@ -97,11 +97,11 @@ def _patch_main_runtime(monkeypatch) -> dict[str, object]:
     monkeypatch.setattr("astrid.runtime.logging_config.setup_logging", lambda level="WARNING": None)
     monkeypatch.setattr("astrid.runtime.logging_config.get_logger", lambda name="main": _DummyLogger())
     monkeypatch.setattr("astrid.state.memory.MemoryManager", _DummyMemory)
-    monkeypatch.setattr("astrid.advanced_memory.create_memory_integration", lambda *args, **kwargs: _DummyAdvancedMemory())
+    monkeypatch.setattr("astrid.state.advanced_memory.create_memory_integration", lambda *args, **kwargs: _DummyAdvancedMemory())
     monkeypatch.setattr("astrid.integrations.skill_engine.create_default_skill_engine", lambda memory: object())
     monkeypatch.setattr("astrid.integrations.terminology_governance.create_terminology_governance_system", lambda memory: object())
     monkeypatch.setattr("astrid.integrations.bootstrap_system.create_bootstrap_system", lambda *args, **kwargs: _DummyBootstrap())
-    monkeypatch.setattr("astrid.agent_loop.set_advanced_memory", lambda memory: None)
+    monkeypatch.setattr("astrid.core.agent_loop.set_advanced_memory", lambda memory: None)
 
     def _fake_run_tty_app(**kwargs) -> None:
         calls["tty_calls"] = int(calls["tty_calls"]) + 1

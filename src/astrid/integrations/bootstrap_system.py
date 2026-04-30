@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Callable, Union
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from astrid.advanced_memory import (
+from astrid.state.advanced_memory import (
     AdvancedMemoryManager, MemoryEntry, MemoryScope, MemoryType, MemoryPriority,
     SkillDefinition, TerminologyEntry
 )

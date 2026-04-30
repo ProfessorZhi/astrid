@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from astrid.integrations.mock_model import MockModelAdapter
-from astrid.permissions import PermissionManager
+from astrid.runtime.permissions import PermissionManager
 from astrid.core.sub_agents import AgentType, SubAgentManager
 from astrid.tools import create_default_tool_registry
 
