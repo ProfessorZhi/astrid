@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import subprocess
+import sys
 
 from astrid.ui.common.frontend import FrontendRuntime
 from astrid.ui.common.text_input import normalize_cli_input
+from astrid.ui.inline.bottom_pane import InlineInputBuffer
 
 
 def render_inline_intro(runtime: FrontendRuntime) -> str:
@@ -39,7 +42,7 @@ class InlineTuiFrontend:
 
     def run(self, runtime: FrontendRuntime) -> list[dict[str, str]] | None:
         print(self.intro if self.intro is not None else render_inline_intro(runtime))
-        read_input = self.input_reader or input
+        read_input = self.input_reader or read_inline_input
         messages = runtime.controller.messages
         while True:
             try:
@@ -57,6 +60,69 @@ class InlineTuiFrontend:
                 break
             messages = next_messages
         return messages
+
+
+def _read_clipboard_text() -> str:
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout
+
+
+def _redraw_prompt(prompt: str, buffer: InlineInputBuffer) -> None:
+    sys.stdout.write("\r\x1b[2K" + prompt + buffer.display_text)
+    sys.stdout.flush()
+
+
+def _read_inline_input_windows(prompt: str) -> str:
+    import msvcrt
+
+    buffer = InlineInputBuffer()
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    while True:
+        char = msvcrt.getwch()
+        if char in {"\r", "\n"}:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return buffer.submit()
+        if char == "\x03":
+            raise KeyboardInterrupt
+        if char == "\x04":
+            raise EOFError
+        if char == "\x08":
+            buffer.backspace()
+            _redraw_prompt(prompt, buffer)
+            continue
+        if char == "\x16":
+            pasted = _read_clipboard_text()
+            if pasted:
+                buffer.insert_paste(pasted)
+                _redraw_prompt(prompt, buffer)
+            continue
+        if char in {"\x00", "\xe0"}:
+            # Consume extended key code.
+            if msvcrt.kbhit():
+                msvcrt.getwch()
+            continue
+        buffer.insert_text(char)
+        sys.stdout.write(char)
+        sys.stdout.flush()
+
+
+def read_inline_input(prompt: str) -> str:
+    if sys.platform == "win32" and sys.stdin.isatty():
+        return _read_inline_input_windows(prompt)
+    return input(prompt)
 
 
 def run_inline_tui_app(**kwargs):
