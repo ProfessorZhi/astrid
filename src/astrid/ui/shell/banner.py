@@ -21,7 +21,7 @@ def render_banner(runtime: dict | None, cwd: str, permission_summary: list[str],
         f"|  CWD: {cwd:<51}|",
     ]
     if permission_summary:
-        for perm in permission_summary[:2]:
+        for perm in permission_summary[:3]:
             lines.append(f"|  {perm:<58}|")
     lines.append("+" + "-" * 60 + "+")
     lines.append(

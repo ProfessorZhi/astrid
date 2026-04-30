@@ -12,7 +12,7 @@ from astrid.runtime.config import load_runtime_config
 from astrid.state.history import load_history_entries, save_history_entries
 from astrid.cli.manage_cli import maybe_handle_management_command
 from astrid.integrations.mock_model import MockModelAdapter
-from astrid.runtime.permissions import PermissionManager
+from astrid.runtime.permissions import PERMISSION_MODES, PermissionManager
 from astrid.core.prompt import build_system_prompt
 from astrid.runtime.bootstrap import BootstrapDependencies, initialize_runtime_session
 from astrid.runtime.controller import RuntimeController, append_transcript
@@ -107,8 +107,12 @@ def _apply_terminal_mode(mode: str) -> None:
         os.environ["ASTRID_TERMINAL_MODE"] = "shell"
         os.environ["ASTRID_ALT_SCREEN"] = "0"
         return
+    if mode == "inline":
+        os.environ["ASTRID_TERMINAL_MODE"] = "inline"
+        os.environ["ASTRID_ALT_SCREEN"] = "0"
+        return
     if mode == "agent":
-        os.environ["ASTRID_TERMINAL_MODE"] = "shell"
+        os.environ["ASTRID_TERMINAL_MODE"] = "inline"
         os.environ["ASTRID_ALT_SCREEN"] = "0"
         return
     os.environ["ASTRID_TERMINAL_MODE"] = "tui"
@@ -116,14 +120,16 @@ def _apply_terminal_mode(mode: str) -> None:
 
 
 def _default_terminal_mode() -> str:
-    return "agent"
+    return "inline"
 
 
-def _resolve_terminal_mode(*, shell_flag: bool, tui_flag: bool) -> str:
-    if shell_flag and tui_flag:
-        raise RuntimeError("--shell and --tui cannot be used together.")
+def _resolve_terminal_mode(*, shell_flag: bool, tui_flag: bool, inline_flag: bool = False) -> str:
+    if sum(1 for flag in (shell_flag, inline_flag, tui_flag) if flag) > 1:
+        raise RuntimeError("--shell, --inline, and --tui cannot be used together.")
     if shell_flag:
         return "shell"
+    if inline_flag:
+        return "inline"
     if tui_flag:
         return "tui"
     return _default_terminal_mode()
@@ -271,7 +277,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Set logging level (default: WARNING)",
     )
     parser.add_argument("--shell", action="store_true", help="Run Astrid in simplified shell fallback mode.")
+    parser.add_argument("--inline", action="store_true", help="Run Astrid in Codex-style inline TUI mode.")
     parser.add_argument("--tui", action="store_true", help="Run Astrid in full-screen TUI mode.")
+    parser.add_argument(
+        "--permission-mode",
+        default=None,
+        choices=list(PERMISSION_MODES),
+        help="Permission mode: default, accept-edits, eval-workspace, or bypassPermissions.",
+    )
     return parser
 
 
@@ -330,7 +343,12 @@ def main() -> None:
         print(format_session_list(list_sessions()))
         return
 
-    _apply_terminal_mode(_resolve_terminal_mode(shell_flag=args.shell, tui_flag=args.tui))
+    terminal_mode = _resolve_terminal_mode(
+        shell_flag=args.shell,
+        inline_flag=args.inline,
+        tui_flag=args.tui,
+    )
+    _apply_terminal_mode(terminal_mode)
 
     from astrid.runtime.logging_config import get_logger
 
@@ -341,6 +359,7 @@ def main() -> None:
         prompt_handler=prompt_handler,
         logger=logger,
         deps=_make_bootstrap_dependencies(),
+        permission_mode=args.permission_mode,
     )
     stdin_isatty = sys.stdin.isatty()
 
@@ -380,7 +399,7 @@ def main() -> None:
             session.messages = run_pipe_inputs(input_stream=sys.stdin, controller=controller)
             return
 
-        if _is_shell_mode():
+        if terminal_mode == "shell":
             _run_shell_repl(
                 cwd=session.cwd,
                 permissions=session.permissions,
@@ -394,6 +413,32 @@ def main() -> None:
                 context_mgr=session.context_mgr,
                 logger=session.logger,
             )
+            return
+
+        if terminal_mode == "inline":
+            from astrid.ui.common.frontend import FrontendRuntime
+            from astrid.ui.inline.app import InlineTuiFrontend
+
+            controller = _make_runtime_controller(
+                cwd=session.cwd,
+                permissions=session.permissions,
+                transcript=session.transcript,
+                tools=session.tools,
+                messages=session.messages,
+                history=session.history,
+                model=session.model,
+                max_tool_steps=session.max_tool_steps,
+                advanced_memory_mgr=session.advanced_memory_mgr,
+                context_mgr=session.context_mgr,
+                logger=session.logger,
+            )
+            session.messages = InlineTuiFrontend().run(
+                FrontendRuntime(
+                    cwd=session.cwd,
+                    controller=controller,
+                    transcript=session.transcript,
+                )
+            ) or session.messages
             return
 
         controller = _make_runtime_controller(

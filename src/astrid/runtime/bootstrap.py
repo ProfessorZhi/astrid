@@ -76,6 +76,7 @@ def initialize_runtime_session(
     prompt_handler: Any,
     logger: Any,
     deps: BootstrapDependencies,
+    permission_mode: str | None = None,
 ) -> RuntimeSession:
     runtime = None
     try:
@@ -116,7 +117,10 @@ def initialize_runtime_session(
         skill_engine=skill_engine,
         bootstrap_system=bootstrap_system,
     )
-    permissions = deps.permission_manager_cls(cwd, prompt=prompt_handler)
+    try:
+        permissions = deps.permission_manager_cls(cwd, prompt=prompt_handler, mode=permission_mode)
+    except TypeError:
+        permissions = deps.permission_manager_cls(cwd, prompt=prompt_handler)
     model = (
         deps.mock_model_adapter_cls()
         if runtime is None or os.environ.get("ASTRID_MODEL_MODE") == "mock"
@@ -157,6 +161,14 @@ def initialize_runtime_session(
     ]
     history = deps.load_history_entries(cwd)
     transcript: list[TranscriptEntry] = []
+    if getattr(permissions, "mode", None) == "bypassPermissions":
+        transcript.append(
+            TranscriptEntry(
+                id=1,
+                kind="welcome",
+                body="WARNING: bypassPermissions mode is active. Astrid policy prompts are bypassed.",
+            )
+        )
 
     return RuntimeSession(
         cwd=cwd,

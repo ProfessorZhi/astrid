@@ -84,7 +84,7 @@ class _DummyLogger:
 
 
 def _patch_main_runtime(monkeypatch) -> dict[str, object]:
-    calls: dict[str, object] = {"tty_calls": 0, "shell_calls": 0}
+    calls: dict[str, object] = {"tty_calls": 0, "shell_calls": 0, "inline_calls": 0}
 
     monkeypatch.setattr(main_mod, "_configure_stdio", lambda: None)
     monkeypatch.setattr(main_mod, "maybe_handle_management_command", lambda cwd, argv: False)
@@ -113,6 +113,12 @@ def _patch_main_runtime(monkeypatch) -> dict[str, object]:
         return kwargs["messages"]
 
     monkeypatch.setattr(main_mod, "_run_shell_repl", _fake_run_shell_repl)
+
+    def _fake_inline_run(self, runtime):
+        calls["inline_calls"] = int(calls["inline_calls"]) + 1
+        return runtime.controller.messages
+
+    monkeypatch.setattr("astrid.ui.inline.app.InlineTuiFrontend.run", _fake_inline_run)
     return calls
 
 
@@ -131,7 +137,8 @@ def test_main_skips_legacy_intro_for_tty_mode(monkeypatch, capsys, tmp_path) -> 
 
     captured = capsys.readouterr()
     assert calls["tty_calls"] == 0
-    assert calls["shell_calls"] == 1
+    assert calls["shell_calls"] == 0
+    assert calls["inline_calls"] == 1
     assert "Quick Start Guide" not in captured.out
     assert "minimal Astrid shell" not in captured.out
     assert "Astrid - Your Terminal Coding Assistant" not in captured.out
@@ -258,13 +265,13 @@ def test_apply_terminal_mode_enables_shell_scrollback() -> None:
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
-def test_apply_terminal_mode_uses_native_scrollback_for_agent_default(monkeypatch) -> None:
+def test_apply_terminal_mode_uses_inline_for_agent_default(monkeypatch) -> None:
     monkeypatch.delenv("ASTRID_TERMINAL_MODE", raising=False)
     monkeypatch.delenv("ASTRID_ALT_SCREEN", raising=False)
 
     main_mod._apply_terminal_mode("agent")
 
-    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "shell"
+    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "inline"
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
@@ -278,10 +285,10 @@ def test_apply_terminal_mode_enables_fullscreen_tui(monkeypatch) -> None:
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "1"
 
 
-def test_resolve_terminal_mode_defaults_to_agent_on_windows(monkeypatch) -> None:
+def test_resolve_terminal_mode_defaults_to_inline_on_windows(monkeypatch) -> None:
     monkeypatch.setattr(main_mod.sys, "platform", "win32")
 
-    assert main_mod._resolve_terminal_mode(shell_flag=False, tui_flag=False) == "agent"
+    assert main_mod._resolve_terminal_mode(shell_flag=False, tui_flag=False) == "inline"
 
 
 def test_resolve_terminal_mode_allows_explicit_tui_override(monkeypatch) -> None:
@@ -294,7 +301,7 @@ def test_resolve_terminal_mode_rejects_conflicting_flags() -> None:
     try:
         main_mod._resolve_terminal_mode(shell_flag=True, tui_flag=True)
     except RuntimeError as exc:
-        assert "--shell and --tui cannot be used together." in str(exc)
+        assert "--shell, --inline, and --tui cannot be used together." in str(exc)
     else:
         raise AssertionError("expected conflicting terminal mode flags to fail")
 
@@ -315,7 +322,7 @@ def test_main_shell_flag_sets_shell_terminal_mode(monkeypatch, tmp_path) -> None
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 
-def test_main_defaults_to_native_scrollback_mode_on_windows(monkeypatch, tmp_path) -> None:
+def test_main_defaults_to_inline_mode_on_windows(monkeypatch, tmp_path) -> None:
     calls = _patch_main_runtime(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(main_mod.sys, "argv", ["astrid"])
@@ -327,8 +334,9 @@ def test_main_defaults_to_native_scrollback_mode_on_windows(monkeypatch, tmp_pat
     main_mod.main()
 
     assert calls["tty_calls"] == 0
-    assert calls["shell_calls"] == 1
-    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "shell"
+    assert calls["shell_calls"] == 0
+    assert calls["inline_calls"] == 1
+    assert main_mod.os.environ["ASTRID_TERMINAL_MODE"] == "inline"
     assert main_mod.os.environ["ASTRID_ALT_SCREEN"] == "0"
 
 

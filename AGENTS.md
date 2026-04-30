@@ -50,6 +50,7 @@
 - 对浏览器类产物，Codex 主持验收时应优先使用 Codex 桌面内置浏览器做辅助验收。小游戏、网页、工具页、仪表盘等都要尽量打开真实页面，模拟人类点击、输入、键盘、鼠标、窗口缩放和截图；但浏览器辅助验收不能完全代替人工评分，尤其是游戏手感、审美、信息架构和产品判断。
 - 横向对比时，Astrid、Claude Code、Codex 必须使用同一组 prompt、同一套初始 workspace、同一套外部验收命令。
 - 所有测试 prompt、初始文件、agent 产物、transcript、pytest/验收输出，都必须保存到对应的 `verification/runs/<agent-platform>/<model>/<run-name>/` 目录。
+- 轻量 suite/run 骨架优先用 `python scripts/create_eval_run.py suite <suite>` 和 `python scripts/create_eval_run.py run <suite> --platform <platform> --model <model> --run-name <run>` 创建。该脚本只复制 `seed-workspace/` 并生成 prompts、instructions、evaluation、comparison/results 模板；不要把它当作自动跑 agent 或自动验收工具。
 - 评测目录命名要短，并同时包含英文和中文含义：suite 用 `snake-贪吃蛇` 这种名字；agent run 用 `YYYY-MM-DD-snake-贪吃蛇` 这种名字。平台和模型不要揉进 run 名字里，要放在上层目录。
 - 评测材料默认中文优先。suite 里的题目说明、要求、验收标准、首轮 prompt、评分口径必须优先写中文；必要时可以保留英文标题或术语辅助识别。
 - run 里的 `results.md`、`instructions.md`、人工试玩记录、失败原因和结论默认中文优先。真正发给 agent 的 prompt 和 transcript 是证据材料，原则上保留原文；如需要中文可另加说明或翻译文件，不要覆盖历史证据。
@@ -67,8 +68,8 @@
    - 仍剩：继续拆 `src/astrid/ui/full/tty_app.py` 的 renderer、input、status、transcript viewport。拆分必须保持 prompt/footer pinned-bottom 行为；多 agent orchestration 的 worker 执行和结果合成还要继续收拢到 runtime/controller。
 
 2. **权限和沙箱治理**
-   - 已实现：权限 policy snapshot、permission tests、更清楚的权限边界说明。
-   - 仍剩：Astrid 当前仍是 policy-only，不是 OS sandbox。没有真实进程/文件系统隔离前，不要说它达到 Codex 级 sandbox。
+   - 已实现：权限 policy snapshot、permission tests、更清楚的权限边界说明；四档权限模式 `default`、`accept-edits`、`eval-workspace`、`bypassPermissions` 已进入 runtime/permission 层，并支持 CLI 参数和环境变量选择。
+   - 仍剩：Astrid 当前仍是 policy-only，不是 OS sandbox。没有真实进程/文件系统隔离前，不要说它达到 Codex 级 sandbox；后续要做的是更强隔离和更细的命令策略，不是重复实现四档模式。
 
 3. **多 Agent runtime**
    - 已实现：worker lifecycle summary、failed/cancelled/reporting 状态、orchestration 相关测试。
@@ -113,20 +114,19 @@
 - `src/astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。
 - `src/astrid/tools/`：暂时保留原位，后续单独整理工具注册和工具实现。
 
-近期不要平均用力，优先做三件事：补上权限系统、产品化自动化测试、重构 TUI。每件事开工前都要先对照本地 Codex 和 Claude Code 源码。
+近期不要平均用力，优先做三件事：继续打磨 inline TUI、产品化自动化测试、拆分 full TUI。每件事开工前都要先对照本地 Codex 和 Claude Code 源码。
 
 1. **权限模式 / eval-workspace**
-   - 这是最该做的下一步。Astrid 当前做无人值守评测还不顺，核心原因是读写文件和命令执行的审批模式不够清楚。
-   - 要实现四档权限模式：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`。
+   - 已实现四档权限模式：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`。
    - `default`：交互确认，真实 TTY 使用默认模式。
    - `accept-edits`：自动允许当前 workspace 内文件编辑；命令仍按规则确认。
    - `eval-workspace`：自动允许当前 workspace 内读写文件和常见开发命令；拒绝 workspace 外写入，拒绝明显危险命令；作为 Astrid eval 推荐默认模式。
    - `bypassPermissions`：明确高风险模式，只给本机开发者手动启动使用；banner 和 transcript 必须醒目标记。
-   - 测试必须覆盖：workspace 内允许、workspace 外拒绝、危险命令拒绝、真实提示文案清楚。
+   - 后续剩余：补更多真实 TTY 文案 smoke、把命令 allowlist 做得更细、探索 Windows 下可落地的 OS 级隔离。不要把当前 policy-only 模式说成 Codex 级 sandbox。
 
 2. **自动化测试 / eval harness 产品化**
-   - `verification/` 规范已经写得很细，但还缺一键骨架命令。
-   - 要做：创建 suite/run、复制 seed workspace、生成 prompt/instructions、保存 transcript/acceptance/evaluation 模板、生成横向 comparison 表。
+   - 已实现：`scripts/create_eval_run.py` 提供轻量 suite/run 骨架创建，复制 seed workspace，并生成 prompt/instructions/evaluation/results/comparison 模板；测试覆盖在 `tests/test_eval_harness.py`。
+   - 仍剩：保存 transcript/acceptance 的一键辅助、生成横向 comparison 表的数据填充、非 TTY / eval-workspace 的自动化执行能力。
    - 同时补上非 TTY / eval-workspace 的自动化执行能力；不要把非 TTY 自动跑混成默认真实终端评测。
 
 3. **TUI 重构**
@@ -269,6 +269,7 @@
   - `instructions.md` 或 `run_eval.*`：Codex 桌面内置终端执行说明；`run_eval.*` 只能做目录准备、验收、记录，不应默认替被测 agent 完成编程任务。
   - `*-transcript.txt`：终端/模型输出记录。
   - `results.*` 或 notes：记录 pass/fail、失败原因、二轮修复情况、验收命令输出。
+- PR4 轻量 harness 只负责骨架：`scripts/create_eval_run.py suite` 创建 suite 模板，`scripts/create_eval_run.py run` 创建 run 模板并复制 suite 的 `seed-workspace/`。它不会启动 Astrid/Claude/Codex，不会替 agent 修改 workspace，也不会把验收通过写入结果。
 - 当前 Astrid 真实模型编程能力评测在：`verification/runs/astrid/minimax2.7/2026-04-29-coding-basic-编程基础/`。
 - 当前 Astrid vs Claude Code 贪吃蛇对比评测在：`verification/runs/astrid/minimax2.7/2026-04-29-snake-贪吃蛇/` 和 `verification/runs/claudecode/minimax2.7/2026-04-29-snake-贪吃蛇/`。
 - 当前 Codex 客户端 GPT-5.5 medium 参考产物在：`verification/runs/codex-client/chatgpt5.5-medium/2026-04-30-snake-贪吃蛇/`。它是 Codex 客户端生成/整理的参考答案，不等同于 Codex CLI 自主运行。
@@ -284,4 +285,5 @@
 - 多 Agent 改动：`python -m pytest tests/test_orchestration.py tests/test_sub_agents.py -q`
 - Context / memory / session 改动：先跑窄测试，再跑 `python -m pytest tests -q -k "context or memory or session"`
 - 文档 / metadata 改动：`python -m pytest tests/test_cli_commands.py tests/test_screen.py -q`
+- 评测 harness / 文档对齐改动：`python -m pytest tests/test_eval_harness.py tests/test_main_startup.py -q`
 - 真实 coding-agent 评测：在 `verification/runs/<agent-platform>/<model>/...` 下新建 run，保存 prompt、workspace、产物、transcript、验收结果，然后在 agent 外部运行 workspace 的验收测试。

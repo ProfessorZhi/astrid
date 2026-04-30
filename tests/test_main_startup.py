@@ -111,6 +111,10 @@ def _patch_common_main_dependencies(monkeypatch, stdin) -> list[str]:
     monkeypatch.setattr("astrid.core.agent_loop.set_advanced_memory", lambda advanced_memory_mgr: None)
     monkeypatch.setattr(main_module, "run_tty_app", lambda **kwargs: None)
     monkeypatch.setattr(main_module, "_run_shell_repl", lambda **kwargs: kwargs["messages"])
+    monkeypatch.setattr(
+        "astrid.ui.inline.app.InlineTuiFrontend.run",
+        lambda self, runtime: runtime.controller.messages,
+    )
     return printed
 
 

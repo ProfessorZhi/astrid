@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from astrid.runtime.permissions import PermissionManager, get_permission_policy_snapshot
+from astrid.runtime.permissions import PermissionManager, get_permission_policy_snapshot, normalize_permission_mode
 
 
 def test_permission_manager_uses_prompt_for_external_path(tmp_path: Path) -> None:
@@ -91,3 +91,45 @@ def test_permission_policy_snapshot_is_not_mutable_global_state() -> None:
 
     fresh_snapshot = get_permission_policy_snapshot()
     assert fresh_snapshot["layers"][0]["enforced"] is True
+
+
+def test_permission_mode_accept_edits_allows_workspace_edits(tmp_path: Path) -> None:
+    manager = PermissionManager(str(tmp_path), mode="accept-edits")
+
+    manager.ensure_edit(str(tmp_path / "demo.txt"), "diff")
+
+
+def test_permission_mode_eval_workspace_allows_common_dev_command(tmp_path: Path) -> None:
+    manager = PermissionManager(str(tmp_path), mode="eval-workspace")
+
+    manager.ensure_command("python", ["-m", "pytest", "tests"], str(tmp_path))
+
+
+def test_permission_mode_eval_workspace_rejects_dangerous_command(tmp_path: Path) -> None:
+    manager = PermissionManager(str(tmp_path), mode="eval-workspace")
+
+    with pytest.raises(RuntimeError, match="Command denied by eval-workspace mode"):
+        manager.ensure_command("rm", ["-rf", "build"], str(tmp_path))
+
+
+def test_permission_mode_eval_workspace_rejects_outside_path(tmp_path: Path) -> None:
+    manager = PermissionManager(str(tmp_path), mode="eval-workspace")
+
+    with pytest.raises(RuntimeError, match="outside workspace"):
+        manager.ensure_path_access(str(tmp_path.parent / "outside.txt"), "read")
+
+
+def test_permission_mode_bypass_allows_dangerous_and_outside(tmp_path: Path) -> None:
+    manager = PermissionManager(str(tmp_path), mode="bypassPermissions")
+
+    manager.ensure_path_access(str(tmp_path.parent / "outside.txt"), "read")
+    manager.ensure_edit(str(tmp_path.parent / "outside.txt"), "diff")
+    manager.ensure_command("rm", ["-rf", "build"], str(tmp_path))
+    assert any("WARNING" in line for line in manager.get_summary())
+
+
+def test_permission_mode_normalizes_environment(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ASTRID_PERMISSION_MODE", "eval_workspace")
+
+    assert normalize_permission_mode(None) == "eval-workspace"
+    assert PermissionManager(str(tmp_path)).mode == "eval-workspace"

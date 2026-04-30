@@ -165,6 +165,14 @@ astrid-py
 }
 ```
 
+### 当前运行边界
+
+- 默认交互入口是 inline 终端体验；`--shell` 是原生 scrollback fallback，`--tui` 是 full-screen TUI。
+- 权限模式已支持四档：`default`、`accept-edits`、`eval-workspace`、`bypassPermissions`，可用 `--permission-mode` 或 `ASTRID_PERMISSION_MODE` 选择。当前 Astrid 是 policy-only sandbox，不提供 OS 级进程或文件系统隔离。
+- Astrid 会从 git root 到当前目录逐层读取 `AGENTS.md`，越靠近当前目录的指令越具体。
+- skills 默认实体目录是 `F:\funnyskills\astrid-skills`，`C:\Users\Administrator\.astrid\skills` 只是用户入口链接；`ASTRID_SKILLS_ROOT` 可覆盖。
+- memory 状态使用统一目录；测试会通过 `ASTRID_MEMORIES_ROOT` 隔离，不要在仓库根创建新的零散 `.astrid*` 状态目录。
+
 ---
 
 ## 🧪 开发
@@ -181,6 +189,15 @@ pytest
 # Mock 模式（无需 API 密钥）
 ASTRID_MODEL_MODE=mock python -m astrid.main
 ```
+
+### 轻量评测骨架
+
+```bash
+python scripts/create_eval_run.py suite snake-贪吃蛇 --title 贪吃蛇
+python scripts/create_eval_run.py run snake-贪吃蛇 --platform astrid --model minimax2.7 --run-name 2026-05-01-snake-贪吃蛇
+```
+
+该脚本只创建 `verification/suites/...` 和 `verification/runs/...` 骨架、复制 `seed-workspace/`、生成 prompt/instructions/evaluation/comparison 模板；不会替被测 agent 写代码或自动喂 prompt。
 
 ---
 
@@ -363,6 +380,15 @@ astrid-py
 | `ANTHROPIC_BASE_URL` | API base URL | `https://api.anthropic.com` |
 | `ANTHROPIC_MODEL` | Model name | — |
 | `ASTRID_MODEL_MODE` | Set to `mock` for testing | — |
+| `ASTRID_PERMISSION_MODE` | Permission mode: `default`, `accept-edits`, `eval-workspace`, or `bypassPermissions` | `default` |
+
+### Runtime Boundaries
+
+- The default interactive entrypoint is the inline terminal experience. `--shell` is the native scrollback fallback, and `--tui` is the full-screen TUI.
+- Permission modes are implemented as four tiers: `default`, `accept-edits`, `eval-workspace`, and `bypassPermissions`, selectable with `--permission-mode` or `ASTRID_PERMISSION_MODE`. Astrid is currently a policy-only sandbox, not an OS-level process or filesystem sandbox.
+- Astrid reads `AGENTS.md` from the git root down to the current working directory, with nearer files taking precedence.
+- Skills use a Codex-style entry/entity split: the default entity root is `F:\funnyskills\astrid-skills`, while `C:\Users\Administrator\.astrid\skills` is only the user entry link. `ASTRID_SKILLS_ROOT` can override it.
+- Memory state should live under the unified memory root; tests isolate it with `ASTRID_MEMORIES_ROOT`. Do not add new ad hoc `.astrid*` state directories at the repository root.
 
 ---
 
@@ -406,6 +432,15 @@ pytest
 # Mock mode (no API key needed)
 ASTRID_MODEL_MODE=mock python -m astrid.main
 ```
+
+### Lightweight Eval Scaffolds
+
+```bash
+python scripts/create_eval_run.py suite snake-贪吃蛇 --title 贪吃蛇
+python scripts/create_eval_run.py run snake-贪吃蛇 --platform astrid --model minimax2.7 --run-name 2026-05-01-snake-贪吃蛇
+```
+
+The helper only creates `verification/suites/...` and `verification/runs/...` scaffolds, copies `seed-workspace/`, and writes prompt/instructions/evaluation/comparison templates. It does not write the answer or automate the tested agent.
 
 ### Project Stats
 

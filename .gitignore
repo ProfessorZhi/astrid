@@ -38,6 +38,7 @@ Thumbs.db
 
 # Local AI collaboration artifacts
 .superpowers/
+.worktrees/
 .playwright-mcp/
 
 # Local-only Astrid runtime and documentation artifacts

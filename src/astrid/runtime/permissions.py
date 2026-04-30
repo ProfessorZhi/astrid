@@ -23,10 +23,18 @@ PermissionDecision = Literal[
 PromptHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
 SandboxSupport = Literal["policy_only", "os_enforced"]
+PermissionMode = Literal["default", "accept-edits", "eval-workspace", "bypassPermissions"]
 
 PERMISSION_POLICY_VERSION = 1
 SANDBOX_SUPPORT: SandboxSupport = "policy_only"
 AUTO_APPROVE_WORKSPACE_ENV = "ASTRID_AUTO_APPROVE_WORKSPACE"
+PERMISSION_MODE_ENV = "ASTRID_PERMISSION_MODE"
+PERMISSION_MODES: tuple[PermissionMode, ...] = (
+    "default",
+    "accept-edits",
+    "eval-workspace",
+    "bypassPermissions",
+)
 _PERMISSION_POLICY_SNAPSHOT: dict[str, Any] = {
     "version": PERMISSION_POLICY_VERSION,
     "sandboxSupport": SANDBOX_SUPPORT,
@@ -118,6 +126,28 @@ def _auto_approve_workspace_enabled() -> bool:
     return os.environ.get(AUTO_APPROVE_WORKSPACE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def normalize_permission_mode(value: str | None) -> PermissionMode:
+    raw = (value or os.environ.get(PERMISSION_MODE_ENV, "default")).strip()
+    aliases = {
+        "": "default",
+        "default": "default",
+        "accept_edits": "accept-edits",
+        "accept-edits": "accept-edits",
+        "eval": "eval-workspace",
+        "eval_workspace": "eval-workspace",
+        "eval-workspace": "eval-workspace",
+        "bypass": "bypassPermissions",
+        "bypasspermissions": "bypassPermissions",
+        "bypassPermissions": "bypassPermissions",
+    }
+    normalized = aliases.get(raw, aliases.get(raw.lower()))
+    if normalized not in PERMISSION_MODES:
+        raise ValueError(
+            f"Unknown permission mode '{raw}'. Expected one of: {', '.join(PERMISSION_MODES)}"
+        )
+    return normalized  # type: ignore[return-value]
+
+
 def _format_command_signature(command: str, args: list[str]) -> str:
     return " ".join([command, *args]).strip()
 
@@ -184,6 +214,24 @@ def _classify_dangerous_command(command: str, args: list[str]) -> str | None:
     return None
 
 
+def _is_common_workspace_command(command: str, args: list[str]) -> bool:
+    normalized_args = [arg.strip().lower() for arg in args if arg.strip()]
+    if command in {"pytest", "ruff", "mypy", "python", "python3"}:
+        if command in {"python", "python3"}:
+            return len(normalized_args) >= 2 and normalized_args[0] == "-m" and normalized_args[1] in {
+                "pytest",
+                "ruff",
+                "mypy",
+                "unittest",
+            }
+        return True
+    if command in {"npm", "pnpm", "yarn"}:
+        return any(arg in {"test", "run", "lint", "build"} for arg in normalized_args)
+    if command == "git":
+        return not _classify_dangerous_command(command, args)
+    return False
+
+
 def _read_permission_store() -> dict[str, Any]:
     if not ASTRID_PERMISSIONS_PATH.exists():
         return {}
@@ -226,9 +274,15 @@ def _write_permission_store(store: dict[str, Any]) -> None:
 
 
 class PermissionManager:
-    def __init__(self, workspace_root: str, prompt: PromptHandler | None = None) -> None:
+    def __init__(
+        self,
+        workspace_root: str,
+        prompt: PromptHandler | None = None,
+        mode: PermissionMode | str | None = None,
+    ) -> None:
         self.workspace_root = _normalize_path(workspace_root)
         self.prompt = prompt
+        self.mode = normalize_permission_mode(str(mode) if mode is not None else None)
         self.allowed_directory_prefixes: set[str] = set()
         self.denied_directory_prefixes: set[str] = set()
         self.session_allowed_paths: set[str] = set()
@@ -270,6 +324,7 @@ class PermissionManager:
         clone = PermissionManager.__new__(PermissionManager)
         clone.workspace_root = self.workspace_root
         clone.prompt = self.prompt
+        clone.mode = self.mode
         clone.allowed_directory_prefixes = set(self.allowed_directory_prefixes)
         clone.denied_directory_prefixes = set(self.denied_directory_prefixes)
         clone.session_allowed_paths = set(self.session_allowed_paths)
@@ -288,6 +343,9 @@ class PermissionManager:
 
     def get_summary(self) -> list[str]:
         summary = [f"cwd: {self.workspace_root}"]
+        summary.append(f"permission mode: {self.mode} ({SANDBOX_SUPPORT})")
+        if self.mode == "bypassPermissions":
+            summary.append("WARNING: bypassPermissions is high risk and bypasses Astrid policy prompts.")
         summary.append(
             "extra allowed dirs: "
             + (", ".join(sorted(self.allowed_directory_prefixes)[:4]) if self.allowed_directory_prefixes else "none")
@@ -316,6 +374,10 @@ class PermissionManager:
         normalized_target = _normalize_path(target_path)
         if _is_within_directory(self.workspace_root, normalized_target):
             return
+        if self.mode == "bypassPermissions":
+            return
+        if self.mode == "eval-workspace":
+            raise RuntimeError(f"Access denied outside workspace by eval-workspace mode: {normalized_target}")
         if normalized_target in self.session_denied_paths or _matches_directory_prefix(normalized_target, self.denied_directory_prefixes):
             raise RuntimeError(f"Access denied for path outside cwd: {normalized_target}")
         if normalized_target in self.session_allowed_paths or _matches_directory_prefix(normalized_target, self.allowed_directory_prefixes):
@@ -368,6 +430,12 @@ class PermissionManager:
     ) -> None:
         self.ensure_path_access(command_cwd, "command_cwd")
         reason = force_prompt_reason or _classify_dangerous_command(command, args)
+        if self.mode == "bypassPermissions":
+            return
+        if self.mode == "eval-workspace" and _is_within_directory(self.workspace_root, command_cwd):
+            if reason and not _is_common_workspace_command(command, args):
+                raise RuntimeError(f"Command denied by eval-workspace mode: {_format_command_signature(command, args)} ({reason})")
+            return
         if not reason:
             return
         signature = _format_command_signature(command, args)
@@ -416,6 +484,12 @@ class PermissionManager:
 
     def ensure_edit(self, target_path: str, diff_preview: str) -> None:
         normalized_target = _normalize_path(target_path)
+        if self.mode == "bypassPermissions":
+            return
+        if self.mode in {"accept-edits", "eval-workspace"} and _is_within_directory(self.workspace_root, normalized_target):
+            return
+        if self.mode == "eval-workspace" and not _is_within_directory(self.workspace_root, normalized_target):
+            raise RuntimeError(f"Edit denied outside workspace by eval-workspace mode: {normalized_target}")
         if (
             normalized_target in self.session_denied_edits
             or normalized_target in self.denied_edit_patterns
