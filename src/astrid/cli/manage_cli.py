@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from astrid.config import get_mcp_config_path, load_scoped_mcp_servers, save_scoped_mcp_servers
-from astrid.skills import discover_skills, install_skill, remove_managed_skill
+from astrid.runtime.config import get_mcp_config_path, load_scoped_mcp_servers, save_scoped_mcp_servers
+from astrid.integrations.skills import discover_skills, install_skill, remove_managed_skill
 
 
 def _print_usage() -> None:

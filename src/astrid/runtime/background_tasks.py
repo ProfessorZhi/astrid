@@ -6,7 +6,7 @@ import time
 import uuid
 from typing import Any
 
-from astrid.tooling import BackgroundTaskResult
+from astrid.core.tooling import BackgroundTaskResult
 
 # In-memory registry of background tasks
 _background_tasks: dict[str, dict[str, Any]] = {}

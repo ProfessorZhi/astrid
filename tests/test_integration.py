@@ -24,16 +24,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from astrid.agent_loop import run_agent_turn
-from astrid.mock_model import MockModelAdapter
+from astrid.integrations.mock_model import MockModelAdapter
 from astrid.permissions import PermissionManager
-from astrid.skills import install_skill
-from astrid.tooling import ToolContext, ToolRegistry, ToolDefinition, ToolResult
+from astrid.integrations.skills import install_skill
+from astrid.core.tooling import ToolContext, ToolRegistry, ToolDefinition, ToolResult
 from astrid.tools import create_default_tool_registry
-from astrid.types import AgentStep, ChatMessage
-from astrid.context_manager import ContextManager
-from astrid.session import SessionData, save_session, load_session, list_sessions
-from astrid.config import load_effective_settings, ASTRID_DIR
-from astrid.prompt import build_system_prompt
+from astrid.core.types import AgentStep, ChatMessage
+from astrid.core.context_manager import ContextManager
+from astrid.state.session import SessionData, save_session, load_session, list_sessions
+from astrid.runtime.config import load_effective_settings, ASTRID_DIR
+from astrid.core.prompt import build_system_prompt
 from astrid.tui.types import TranscriptEntry, _create_transcript_entry, _recycle_transcript_entry
 
 
@@ -763,7 +763,7 @@ class TestLiveAPI:
 
     def test_simple_question(self, tools, tmp_workspace, auto_allow_permissions):
         """Send a simple question to the real API and verify response."""
-        from astrid.anthropic_adapter import AnthropicModelAdapter
+        from astrid.integrations.anthropic_adapter import AnthropicModelAdapter
 
         runtime = {
             "model": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
@@ -794,7 +794,7 @@ class TestLiveAPI:
 
     def test_tool_use_via_api(self, tools, tmp_workspace, auto_allow_permissions):
         """Real API triggers tool use (list_files) and processes result."""
-        from astrid.anthropic_adapter import AnthropicModelAdapter
+        from astrid.integrations.anthropic_adapter import AnthropicModelAdapter
 
         runtime = {
             "model": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
@@ -845,7 +845,7 @@ class TestMCPIntegration:
 
     def test_mcp_import_and_create(self):
         """MCP module imports and creates empty tool set."""
-        from astrid.mcp import create_mcp_backed_tools
+        from astrid.integrations.mcp import create_mcp_backed_tools
 
         result = create_mcp_backed_tools(cwd=".", mcp_servers={})
         assert isinstance(result, dict)

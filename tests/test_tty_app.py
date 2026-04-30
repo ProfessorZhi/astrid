@@ -48,9 +48,9 @@ from astrid.tty_app import (
 from astrid.tui.screen_diff import LineDiffScreenWriter
 from astrid.tui.buddy_state import build_buddy_profile
 from astrid.tui.input_parser import KeyEvent
-from astrid.mock_model import MockModelAdapter
+from astrid.integrations.mock_model import MockModelAdapter
 from astrid.permissions import PermissionManager
-from astrid.prompt import build_system_prompt
+from astrid.core.prompt import build_system_prompt
 from astrid.tools import create_default_tool_registry
 from astrid.tui.chrome import strip_ansi
 from astrid.tui.transcript import format_transcript_text

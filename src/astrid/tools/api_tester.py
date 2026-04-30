@@ -5,7 +5,7 @@ import urllib.request
 import urllib.error
 import time
 from typing import Any
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 
 # ---------------------------------------------------------------------------

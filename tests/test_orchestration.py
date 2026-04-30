@@ -1,4 +1,4 @@
-from astrid.orchestration import (
+from astrid.core.orchestration import (
     TaskRuntimeState,
     WorkerRole,
     WorkerRuntimeState,
@@ -14,7 +14,7 @@ from astrid.orchestration import (
     request_spawn,
     sample_spinner_verb,
 )
-from astrid.orchestration_verbs import get_phase_verbs
+from astrid.core.orchestration_verbs import get_phase_verbs
 
 
 def test_runtime_transitions_from_planning_to_spawning() -> None:

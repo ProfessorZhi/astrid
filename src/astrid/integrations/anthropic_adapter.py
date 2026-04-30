@@ -7,8 +7,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from astrid.config import DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MODEL_TIMEOUT_SECONDS
-from astrid.types import AgentStep, StepDiagnostics
+from astrid.runtime.config import DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MODEL_TIMEOUT_SECONDS
+from astrid.core.types import AgentStep, StepDiagnostics
 
 DEFAULT_MAX_RETRIES = 4
 BASE_RETRY_DELAY_MS = 500

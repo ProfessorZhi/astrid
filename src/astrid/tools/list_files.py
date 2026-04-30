@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from astrid.tooling import ToolDefinition, ToolResult
-from astrid.workspace import resolve_tool_path
+from astrid.core.tooling import ToolDefinition, ToolResult
+from astrid.core.workspace import resolve_tool_path
 
 
 def _validate(input_data: dict) -> dict:

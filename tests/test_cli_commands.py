@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from astrid.cli_commands import find_matching_slash_commands, format_slash_commands, try_handle_local_command
-from astrid import cli_commands as cli_commands_mod
-from astrid.local_tool_shortcuts import parse_local_tool_shortcut
-from astrid.skills import install_skill
-from astrid.tooling import ToolCatalog, ToolRegistry
+from astrid.cli.cli_commands import find_matching_slash_commands, format_slash_commands, try_handle_local_command
+from astrid.cli import cli_commands as cli_commands_mod
+from astrid.runtime.local_tool_shortcuts import parse_local_tool_shortcut
+from astrid.integrations.skills import install_skill
+from astrid.core.tooling import ToolCatalog, ToolRegistry
 from astrid.tools import create_default_tool_registry
 
 

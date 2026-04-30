@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 from astrid.tools.governance_audit import (
     run_full_audit,
     audit_dependency_directions,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 
 def _validate(input_data: dict) -> dict:

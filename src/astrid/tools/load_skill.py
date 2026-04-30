@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from astrid.skills import load_skill
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.integrations.skills import load_skill
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 
 def _validate(input_data: dict) -> dict:

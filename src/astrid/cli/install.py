@@ -11,7 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from astrid.config import (
+from astrid.runtime.config import (
     ASTRID_DIR,
     ASTRID_SETTINGS_PATH,
     load_effective_settings,

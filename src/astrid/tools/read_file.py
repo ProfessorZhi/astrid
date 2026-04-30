@@ -5,8 +5,8 @@ import time
 from functools import lru_cache
 from pathlib import Path
 
-from astrid.tooling import ToolDefinition, ToolResult
-from astrid.workspace import resolve_tool_path
+from astrid.core.tooling import ToolDefinition, ToolResult
+from astrid.core.workspace import resolve_tool_path
 
 DEFAULT_READ_LIMIT = 8000
 MAX_READ_LIMIT = 20000

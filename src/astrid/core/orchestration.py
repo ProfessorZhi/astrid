@@ -8,7 +8,7 @@ import hashlib
 import itertools
 import time
 
-from astrid.orchestration_verbs import get_phase_verbs
+from astrid.core.orchestration_verbs import get_phase_verbs
 
 
 class TaskRuntimeState(str, Enum):

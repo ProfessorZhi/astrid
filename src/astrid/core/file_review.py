@@ -3,7 +3,7 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-from astrid.tooling import ToolContext, ToolResult
+from astrid.core.tooling import ToolContext, ToolResult
 
 
 def build_unified_diff(file_path: str, before: str, after: str) -> str:

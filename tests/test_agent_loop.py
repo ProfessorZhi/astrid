@@ -1,6 +1,6 @@
 from astrid.agent_loop import run_agent_turn
-from astrid.tooling import ToolDefinition, ToolRegistry, ToolResult
-from astrid.types import AgentStep, ChatMessage, ModelAdapter, StepDiagnostics
+from astrid.core.tooling import ToolDefinition, ToolRegistry, ToolResult
+from astrid.core.types import AgentStep, ChatMessage, ModelAdapter, StepDiagnostics
 
 
 class ScriptedModel(ModelAdapter):

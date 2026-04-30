@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import urllib.request
 import urllib.parse
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 MAX_RESULTS = 10
 

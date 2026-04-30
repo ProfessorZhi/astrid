@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from astrid import desktop_control as desktop
+from astrid.integrations import desktop_control as desktop
 
 
 class _FakeWindow:

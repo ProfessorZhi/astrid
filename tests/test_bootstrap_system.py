@@ -15,9 +15,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from astrid.advanced_memory import create_memory_integration, AdvancedMemoryManager
-from astrid.skill_engine import create_default_skill_engine, SkillEngine
-from astrid.terminology_governance import create_terminology_governance_system
-from astrid.bootstrap_system import (
+from astrid.integrations.skill_engine import create_default_skill_engine, SkillEngine
+from astrid.integrations.terminology_governance import create_terminology_governance_system
+from astrid.integrations.bootstrap_system import (
     create_bootstrap_system,
     BootstrapSystem,
     PerformanceAnalyzer,

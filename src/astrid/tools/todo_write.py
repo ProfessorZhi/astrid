@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 # In-memory task storage (resets per session)
 _tasks = []

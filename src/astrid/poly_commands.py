@@ -367,7 +367,7 @@ def create_builtin_commands(
     # /memory - Show memory status
     def memory_handler(args: str, context: dict) -> str:
         try:
-            from astrid.memory import MemoryManager
+            from astrid.state.memory import MemoryManager
             workspace = context.get("workspace", ".")
             mm = MemoryManager(workspace)
             return mm.format_stats()
@@ -388,7 +388,7 @@ def create_builtin_commands(
     # /tasks - Show task list
     def tasks_handler(args: str, context: dict) -> str:
         try:
-            from astrid.task_tracker import TaskManager
+            from astrid.runtime.task_tracker import TaskManager
             tm = TaskManager()
             if tm.active_list:
                 return tm.format_details()

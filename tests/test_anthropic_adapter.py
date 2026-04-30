@@ -1,8 +1,8 @@
 import json
 
-from astrid.anthropic_adapter import AnthropicModelAdapter
-from astrid.config import DEFAULT_MAX_OUTPUT_TOKENS
-from astrid.tooling import ToolDefinition, ToolRegistry
+from astrid.integrations.anthropic_adapter import AnthropicModelAdapter
+from astrid.runtime.config import DEFAULT_MAX_OUTPUT_TOKENS
+from astrid.core.tooling import ToolDefinition, ToolRegistry
 
 
 class DummyResponse:

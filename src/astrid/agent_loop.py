@@ -3,11 +3,11 @@ from __future__ import annotations
 import time
 from typing import Callable
 
-from astrid.context_manager import ContextManager, estimate_message_tokens
-from astrid.logging_config import get_logger
+from astrid.core.context_manager import ContextManager, estimate_message_tokens
+from astrid.runtime.logging_config import get_logger
 from astrid.permissions import PermissionManager
-from astrid.tooling import ToolContext, ToolRegistry
-from astrid.types import AgentStep, ChatMessage, ModelAdapter
+from astrid.core.tooling import ToolContext, ToolRegistry
+from astrid.core.types import AgentStep, ChatMessage, ModelAdapter
 
 logger = get_logger("agent_loop")
 

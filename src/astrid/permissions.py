@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from astrid.config import ASTRID_PERMISSIONS_PATH
+from astrid.runtime.config import ASTRID_PERMISSIONS_PATH
 
 # 权限决策类型 — 对齐 TS 版 PermissionDecision
 PermissionDecision = Literal[

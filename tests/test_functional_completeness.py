@@ -32,14 +32,14 @@ class TestStartupAndConfig:
 
     def test_config_diagnostic_command(self):
         """Test --validate-config output format."""
-        from astrid.config import format_config_diagnostic
+        from astrid.runtime.config import format_config_diagnostic
         result = format_config_diagnostic()
         assert "Configuration Diagnostics" in result
         assert "Status:" in result
 
     def test_logging_system_initialization(self):
         """Test logging system initializes correctly."""
-        from astrid.logging_config import setup_logging, get_logger
+        from astrid.runtime.logging_config import setup_logging, get_logger
         logger = setup_logging(level="DEBUG", log_to_file=False, log_to_console=False)
         assert logger.name == "astrid"
         assert logger.level == 10  # DEBUG level
@@ -47,10 +47,10 @@ class TestStartupAndConfig:
     def test_core_module_imports(self):
         """Test all core modules import without errors."""
         from astrid.main import main
-        from astrid.logging_config import setup_logging
-        from astrid.context_manager import ContextManager
-        from astrid.memory import MemoryManager
-        from astrid.config import validate_config
+        from astrid.runtime.logging_config import setup_logging
+        from astrid.core.context_manager import ContextManager
+        from astrid.state.memory import MemoryManager
+        from astrid.runtime.config import validate_config
         # If we get here, all imports succeeded
         assert True
 
@@ -168,7 +168,7 @@ class TestContextManagement:
 
     def test_token_estimation_ascii(self):
         """Test token estimation for ASCII text."""
-        from astrid.context_manager import estimate_tokens
+        from astrid.core.context_manager import estimate_tokens
         text = "Hello World " * 100
         tokens = estimate_tokens(text)
         # ~4 chars/token for ASCII
@@ -177,7 +177,7 @@ class TestContextManagement:
 
     def test_token_estimation_chinese(self):
         """Test token estimation for Chinese text."""
-        from astrid.context_manager import estimate_tokens
+        from astrid.core.context_manager import estimate_tokens
         text = "你好世界" * 100
         tokens = estimate_tokens(text)
         # ~1.5 chars/token for CJK
@@ -186,7 +186,7 @@ class TestContextManagement:
 
     def test_context_manager_stats(self):
         """Test context manager statistics."""
-        from astrid.context_manager import ContextManager
+        from astrid.core.context_manager import ContextManager
         ctx = ContextManager(model="claude-sonnet-4-20250514")
         ctx.messages = [{"role": "user", "content": "Hello " * 100}]
         stats = ctx.get_stats()
@@ -195,7 +195,7 @@ class TestContextManagement:
 
     def test_context_compaction(self):
         """Test context compaction reduces message count."""
-        from astrid.context_manager import ContextManager
+        from astrid.core.context_manager import ContextManager
         ctx = ContextManager(model="claude-sonnet-4-20250514", context_window=1000)
         # Add many messages to trigger compaction
         ctx.messages = [{"role": "user", "content": "x" * 50} for _ in range(50)]
@@ -214,12 +214,12 @@ class TestMemorySystem:
     @pytest.fixture
     def memory_mgr(self, tmp_path):
         """Create a temporary memory manager."""
-        from astrid.memory import MemoryManager
+        from astrid.state.memory import MemoryManager
         return MemoryManager(workspace=str(tmp_path))
 
     def test_add_memory_entry(self, memory_mgr):
         """Test adding a memory entry."""
-        from astrid.memory import MemoryScope
+        from astrid.state.memory import MemoryScope
         entry = memory_mgr.add_entry(
             scope=MemoryScope.PROJECT,
             category="convention",
@@ -231,7 +231,7 @@ class TestMemorySystem:
 
     def test_search_memory(self, memory_mgr):
         """Test searching memory entries."""
-        from astrid.memory import MemoryScope
+        from astrid.state.memory import MemoryScope
         memory_mgr.add_entry(MemoryScope.PROJECT, "test", "Python is great for coding")
         memory_mgr.add_entry(MemoryScope.PROJECT, "test", "JavaScript runs in browsers")
         results = memory_mgr.search("Python")
@@ -240,7 +240,7 @@ class TestMemorySystem:
 
     def test_memory_context_injection(self, memory_mgr):
         """Test memory context injection for system prompt."""
-        from astrid.memory import MemoryScope
+        from astrid.state.memory import MemoryScope
         memory_mgr.add_entry(MemoryScope.PROJECT, "convention", "Always write tests")
         context = memory_mgr.get_relevant_context(max_entries=10, max_tokens=8000)
         assert isinstance(context, str)
@@ -248,7 +248,7 @@ class TestMemorySystem:
 
     def test_memory_persistence(self, memory_mgr):
         """Test memory persists to disk."""
-        from astrid.memory import MemoryManager, MemoryScope
+        from astrid.state.memory import MemoryManager, MemoryScope
         memory_mgr.add_entry(MemoryScope.PROJECT, "test", "Persistent memory entry")
         # Reload and check
         memory_mgr2 = MemoryManager(workspace=memory_mgr.workspace)
@@ -265,14 +265,14 @@ class TestHelpSystem:
 
     def test_config_diagnostic_format(self):
         """Test /config command output format."""
-        from astrid.config import format_config_diagnostic
+        from astrid.runtime.config import format_config_diagnostic
         result = format_config_diagnostic()
         assert "Configuration Diagnostics" in result
         assert "=" * 40 in result
 
     def test_context_details_format(self):
         """Test /context command output format."""
-        from astrid.context_manager import ContextManager
+        from astrid.core.context_manager import ContextManager
         ctx = ContextManager(model="claude-sonnet-4-20250514")
         result = ctx.format_context_details()
         assert "Context Window Usage" in result
@@ -280,7 +280,7 @@ class TestHelpSystem:
 
     def test_memory_summary_format(self):
         """Test /memory command output format."""
-        from astrid.memory import MemoryManager
+        from astrid.state.memory import MemoryManager
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             mem = MemoryManager(workspace=tmp)
@@ -291,7 +291,7 @@ class TestHelpSystem:
 
     def test_slash_commands_available(self):
         """Test that all slash commands are available."""
-        from astrid.cli_commands import SLASH_COMMANDS
+        from astrid.cli.cli_commands import SLASH_COMMANDS
         command_names = {cmd.name for cmd in SLASH_COMMANDS}
         expected = {"/help", "/tools", "/status", "/config", "/context", "/memory", "/mcp", "/skills", "/exit"}
         assert expected.issubset(command_names)
@@ -306,7 +306,7 @@ class TestErrorRecovery:
 
     def test_config_error_guidance(self):
         """Test that config errors provide actionable guidance."""
-        from astrid.config import validate_config
+        from astrid.runtime.config import validate_config
         is_valid, messages = validate_config()
         if not is_valid:
             # At least one message should contain guidance

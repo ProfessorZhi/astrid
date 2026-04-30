@@ -30,8 +30,8 @@ from astrid.advanced_memory import (
     AdvancedMemoryManager, MemoryEntry, MemoryScope, MemoryType, MemoryPriority,
     SkillDefinition, TerminologyEntry
 )
-from astrid.skill_engine import SkillEngine, SkillExecutionResult, SkillExecutionContext
-from astrid.terminology_governance import TerminologyGovernanceSystem
+from astrid.integrations.skill_engine import SkillEngine, SkillExecutionResult, SkillExecutionContext
+from astrid.integrations.terminology_governance import TerminologyGovernanceSystem
 
 
 # ---------------------------------------------------------------------------

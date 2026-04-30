@@ -14,9 +14,9 @@ os.environ["ASTRID_MODEL_MODE"] = "mock"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from astrid.config import load_runtime_config
+from astrid.runtime.config import load_runtime_config
 from astrid.permissions import PermissionManager
-from astrid.prompt import build_system_prompt
+from astrid.core.prompt import build_system_prompt
 from astrid.tools import create_default_tool_registry
 from astrid.tty_app import run_tty_app
 

@@ -5,7 +5,7 @@ import socket
 import urllib.request
 import urllib.error
 from ipaddress import ip_address
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 MAX_CONTENT_LENGTH = 50000
 MAX_REDIRECTS = 5  # 限制重定向次数防止 SSRF

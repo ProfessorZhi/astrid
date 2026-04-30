@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from astrid.file_review import apply_reviewed_file_change
-from astrid.tooling import ToolDefinition, ToolResult
-from astrid.workspace import resolve_tool_path
+from astrid.core.file_review import apply_reviewed_file_change
+from astrid.core.tooling import ToolDefinition, ToolResult
+from astrid.core.workspace import resolve_tool_path
 
 
 def _validate(input_data: dict) -> dict:

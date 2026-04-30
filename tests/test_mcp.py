@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from astrid.mcp import _resolve_mcp_command, _validate_mcp_command, create_mcp_backed_tools
-from astrid.tooling import ToolContext
+from astrid.integrations.mcp import _resolve_mcp_command, _validate_mcp_command, create_mcp_backed_tools
+from astrid.core.tooling import ToolContext
 
 
 def test_create_mcp_backed_tools_supports_newline_json(tmp_path: Path) -> None:
@@ -63,7 +63,7 @@ def test_resolve_mcp_command_uses_cmd_wrapper_on_windows() -> None:
     if os.name != "nt":
         return
 
-    with patch("astrid.mcp.shutil.which") as mock_which:
+    with patch("astrid.integrations.mcp.shutil.which") as mock_which:
         mock_which.side_effect = [None, r"E:\develop\nodejs\npx.cmd"]
 
         assert _resolve_mcp_command("npx") == r"E:\develop\nodejs\npx.cmd"

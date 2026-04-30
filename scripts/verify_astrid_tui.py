@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from astrid.desktop_control import click_at, focus_window, press_key, scroll_at, take_screenshot, type_text
+from astrid.integrations.desktop_control import click_at, focus_window, press_key, scroll_at, take_screenshot, type_text
 
 CREATE_NEW_CONSOLE = 0x00000010
 

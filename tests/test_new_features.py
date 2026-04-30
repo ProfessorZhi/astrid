@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from astrid.api_retry import (
+from astrid.integrations.api_retry import (
     APIRetryExhaustedError,
     HTTPError,
     RetryState,
@@ -16,7 +16,7 @@ from astrid.api_retry import (
     is_retryable_error,
     retry_with_backoff,
 )
-from astrid.context_manager import (
+from astrid.core.context_manager import (
     ContextManager,
     ContextStats,
     estimate_message_tokens,
@@ -25,14 +25,14 @@ from astrid.context_manager import (
     load_context_state,
     save_context_state,
 )
-from astrid.memory import (
+from astrid.state.memory import (
     MemoryEntry,
     MemoryFile,
     MemoryManager,
     MemoryScope,
     inject_memory_into_prompt,
 )
-from astrid.task_tracker import (
+from astrid.runtime.task_tracker import (
     Task,
     TaskList,
     TaskManager,
@@ -134,7 +134,7 @@ def test_context_manager_format_summary():
 
 def test_context_manager_persistence(tmp_path):
     """Test saving and loading context state."""
-    with patch("astrid.context_manager.ASTRID_DIR", tmp_path):
+    with patch("astrid.core.context_manager.ASTRID_DIR", tmp_path):
         manager = ContextManager(model="claude-sonnet-4-20250514")
         manager.add_message({"role": "user", "content": "Test"})
         

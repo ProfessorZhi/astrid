@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from astrid import history as history_mod
+from astrid.state import history as history_mod
 
 
 def test_load_history_entries_keeps_workspace_history_isolated(monkeypatch, tmp_path) -> None:

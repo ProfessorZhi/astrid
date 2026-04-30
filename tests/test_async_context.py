@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from astrid.async_context import AsyncContextCollector, collect_context, invalidate_context
+from astrid.core.async_context import AsyncContextCollector, collect_context, invalidate_context
 
 
 def test_collect_context_includes_project_agents_md(tmp_path):

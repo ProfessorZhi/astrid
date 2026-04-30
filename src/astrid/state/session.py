@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
-from astrid.config import ASTRID_DIR
+from astrid.runtime.config import ASTRID_DIR
 
 
 # ---------------------------------------------------------------------------

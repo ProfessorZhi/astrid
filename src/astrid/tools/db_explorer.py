@@ -4,7 +4,7 @@ import sqlite3
 import re
 from pathlib import Path
 from typing import Any
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 
 # ---------------------------------------------------------------------------

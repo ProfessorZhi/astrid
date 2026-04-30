@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from astrid.config import ASTRID_DIR, ASTRID_HISTORY_PATH
+from astrid.runtime.config import ASTRID_DIR, ASTRID_HISTORY_PATH
 
 
 def _strip_leading_bom_mojibake(text: str) -> str:

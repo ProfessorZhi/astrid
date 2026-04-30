@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 
-from astrid.types import AgentStep
+from astrid.core.types import AgentStep
 
 
 def _last_user_message(messages):

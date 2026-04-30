@@ -20,7 +20,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from astrid.config import ASTRID_DIR
+from astrid.runtime.config import ASTRID_DIR
 
 
 def memories_root() -> Path:
@@ -508,7 +508,7 @@ class MemoryManager:
         Returns formatted MEMORY.md content from all scopes,
         respecting token limits.
         """
-        from astrid.context_manager import estimate_tokens
+        from astrid.core.context_manager import estimate_tokens
         
         parts = []
         total_tokens = 0

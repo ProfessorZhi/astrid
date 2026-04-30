@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from astrid.skills import (
+from astrid.integrations.skills import (
     _external_skills_root,
     _user_skills_root,
     discover_skills,
@@ -88,7 +88,7 @@ def test_external_skill_root_defaults_to_user_astrid_skills(tmp_path: Path, monk
     monkeypatch.delenv("ASTRID_SKILLS_ROOT", raising=False)
     monkeypatch.setenv("HOME", str(user_home))
     monkeypatch.setenv("USERPROFILE", str(user_home))
-    monkeypatch.setattr("astrid.skills.sys.platform", "win32")
+    monkeypatch.setattr("astrid.integrations.skills.sys.platform", "win32")
 
     assert _user_skills_root() == user_home / ".astrid" / "skills"
     assert _external_skills_root() == Path("F:/funnyskills/astrid-skills")

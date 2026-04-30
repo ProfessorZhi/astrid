@@ -1,4 +1,4 @@
-﻿"""Astrid TTY Application.
+"""Astrid TTY Application.
 
 This module implements the full-screen terminal user interface for Astrid,
 including:
@@ -25,17 +25,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from astrid.agent_loop import run_agent_turn
-from astrid.background_tasks import list_background_tasks
-from astrid.cli_commands import (
+from astrid.runtime.background_tasks import list_background_tasks
+from astrid.cli.cli_commands import (
     SLASH_COMMANDS,
     find_matching_slash_commands,
     try_handle_local_command,
 )
-from astrid.config import load_pet_settings, save_pet_settings
-from astrid.cost_tracker import CostTracker
-from astrid.history import load_history_entries, save_history_entries
-from astrid.local_tool_shortcuts import parse_local_tool_shortcut
-from astrid.orchestration import (
+from astrid.runtime.config import load_pet_settings, save_pet_settings
+from astrid.runtime.cost_tracker import CostTracker
+from astrid.state.history import load_history_entries, save_history_entries
+from astrid.runtime.local_tool_shortcuts import parse_local_tool_shortcut
+from astrid.core.orchestration import (
     OrchestratorState,
     TaskRuntimeState,
     WorkerRole,
@@ -50,9 +50,9 @@ from astrid.orchestration import (
     sample_spinner_verb,
 )
 from astrid.permissions import PermissionManager
-from astrid.prompt import build_system_prompt
-from astrid.sub_agents import AgentType, SubAgentManager
-from astrid.session import (
+from astrid.core.prompt import build_system_prompt
+from astrid.core.sub_agents import AgentType, SubAgentManager
+from astrid.state.session import (
     AutosaveManager,
     SessionData,
     create_new_session,
@@ -64,7 +64,7 @@ from astrid.session import (
     save_session,
 )
 from astrid.state import AppState, Store, create_app_store, format_app_state_summary
-from astrid.tooling import ToolContext, ToolRegistry
+from astrid.core.tooling import ToolContext, ToolRegistry
 from astrid.tui.chrome import (
     _cached_terminal_size,
     get_permission_prompt_max_scroll_offset,
@@ -125,8 +125,8 @@ from astrid.tui.transcript import (
     render_transcript_simple_windowed,
 )
 from astrid.tui.types import OrchestrationWorker, TranscriptEntry
-from astrid.types import ChatMessage, ModelAdapter
-from astrid.workspace import resolve_tool_path
+from astrid.core.types import ChatMessage, ModelAdapter
+from astrid.core.workspace import resolve_tool_path
 
 # ---------------------------------------------------------------------------
 # Terminal size 鈥?use unified cache from chrome module

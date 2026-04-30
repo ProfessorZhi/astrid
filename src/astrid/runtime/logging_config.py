@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from astrid.config import ASTRID_DIR
+from astrid.runtime.config import ASTRID_DIR
 
 # 日志文件路径
 LOG_FILE = ASTRID_DIR / "astrid.log"

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from astrid.session import (
+from astrid.state.session import (
     AutosaveManager,
     SessionData,
     SessionMetadata,
@@ -29,8 +29,8 @@ def temp_session_dir(tmp_path):
     """Create a temporary session directory."""
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir()
-    with patch("astrid.session.SESSIONS_DIR", sessions_dir), \
-         patch("astrid.session.ASTRID_DIR", tmp_path):
+    with patch("astrid.state.session.SESSIONS_DIR", sessions_dir), \
+         patch("astrid.state.session.ASTRID_DIR", tmp_path):
         yield sessions_dir
 
 

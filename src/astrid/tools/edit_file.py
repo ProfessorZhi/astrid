@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from astrid.file_review import apply_reviewed_file_change, load_existing_file
-from astrid.tooling import ToolDefinition
-from astrid.workspace import resolve_tool_path
+from astrid.core.file_review import apply_reviewed_file_change, load_existing_file
+from astrid.core.tooling import ToolDefinition
+from astrid.core.workspace import resolve_tool_path
 
 
 def _validate(input_data: dict) -> dict:

@@ -6,9 +6,9 @@ import subprocess
 import sys
 from typing import Sequence
 
-from astrid.background_tasks import register_background_shell_task
-from astrid.tooling import ToolDefinition, ToolResult
-from astrid.workspace import resolve_tool_path
+from astrid.runtime.background_tasks import register_background_shell_task
+from astrid.core.tooling import ToolDefinition, ToolResult
+from astrid.core.workspace import resolve_tool_path
 
 # 命令执行超时（秒）- 5 分钟
 COMMAND_TIMEOUT = 300

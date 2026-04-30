@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from astrid.tooling import ToolContext
+from astrid.core.tooling import ToolContext
 
 
 def resolve_tool_path(context: ToolContext, input_path: str, intent: str) -> Path:

@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable
 from datetime import datetime
 
-from astrid.config import ASTRID_DIR
-from astrid.memory import (
+from astrid.runtime.config import ASTRID_DIR
+from astrid.state.memory import (
     backup_legacy_memory_dir,
     memories_root,
     workspace_id as _workspace_id,
@@ -448,7 +448,7 @@ class AdvancedMemoryManager:
 
             has_basic_payload = (legacy_path / "memory.json").exists() or (legacy_path / "MEMORY.md").exists()
             if has_basic_payload:
-                from astrid.memory import MemoryManager
+                from astrid.state.memory import MemoryManager
 
                 MemoryManager(project_root=self.workspace)
 
@@ -1001,7 +1001,7 @@ class AdvancedMemoryManager:
         4. 基于访问频率
         5. Token 预算限制
         """
-        from astrid.context_manager import estimate_tokens
+        from astrid.core.context_manager import estimate_tokens
         
         if not current_query:
             # 无查询时返回高优先级记忆
@@ -1072,7 +1072,7 @@ class AdvancedMemoryManager:
 
     def format_context_for_prompt(self, max_tokens: int = 4000) -> str:
         """格式化记忆上下文用于系统提示"""
-        from astrid.context_manager import estimate_tokens
+        from astrid.core.context_manager import estimate_tokens
         
         context_parts = []
         total_tokens = 0

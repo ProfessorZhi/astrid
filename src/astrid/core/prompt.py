@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from astrid.project_instructions import format_project_instructions, load_project_instructions
+from astrid.core.project_instructions import format_project_instructions, load_project_instructions
 
 
 def _engineering_governance_rules() -> str:

@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 from astrid import advanced_memory as advanced_memory_mod
-from astrid import memory as memory_mod
+from astrid.state import memory as memory_mod
 from astrid.advanced_memory import AdvancedMemoryManager, MemoryScope as AdvancedScope
-from astrid.cli_commands import try_handle_local_command
-from astrid.memory import MemoryManager, MemoryScope
-from astrid.prompt import build_system_prompt
+from astrid.cli.cli_commands import try_handle_local_command
+from astrid.state.memory import MemoryManager, MemoryScope
+from astrid.core.prompt import build_system_prompt
 
 
 def test_memory_root_defaults_to_user_memories(monkeypatch, tmp_path):

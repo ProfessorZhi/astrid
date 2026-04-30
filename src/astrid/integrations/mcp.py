@@ -10,7 +10,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import Any
 
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 # 安全常量：禁止在命令参数中出现的危险字符
 DANGEROUS_SHELL_CHARS = set('|&;`$(){}<>\n\r')

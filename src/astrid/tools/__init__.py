@@ -1,9 +1,9 @@
 import os
 from dataclasses import asdict
 
-from astrid.mcp import create_mcp_backed_tools
-from astrid.skills import discover_skills
-from astrid.tooling import ToolCatalog, ToolRegistry
+from astrid.integrations.mcp import create_mcp_backed_tools
+from astrid.integrations.skills import discover_skills
+from astrid.core.tooling import ToolCatalog, ToolRegistry
 from astrid.tools.advanced_memory_tools import (
     bootstrap_status_tool,
     memory_search_tool,

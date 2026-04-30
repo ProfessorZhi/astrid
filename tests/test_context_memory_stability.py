@@ -1,8 +1,8 @@
 """Focused stability tests for context compaction and session resume."""
 
-import astrid.session as session_mod
-from astrid.context_manager import ContextManager
-from astrid.session import create_new_session, load_session, save_session
+import astrid.state.session as session_mod
+from astrid.core.context_manager import ContextManager
+from astrid.state.session import create_new_session, load_session, save_session
 
 
 def test_compaction_preserves_initial_user_task_and_recent_tool_context():

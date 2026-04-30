@@ -85,20 +85,20 @@ def _patch_common_main_dependencies(monkeypatch, stdin) -> list[str]:
     monkeypatch.setattr(main_module.sys, "stdin", stdin)
     monkeypatch.setattr(main_module.sys, "argv", ["astrid"])
     monkeypatch.setattr(builtins, "print", fake_print)
-    monkeypatch.setattr("astrid.logging_config.setup_logging", lambda level: None)
-    monkeypatch.setattr("astrid.logging_config.get_logger", lambda name: _FakeLogger())
+    monkeypatch.setattr("astrid.runtime.logging_config.setup_logging", lambda level: None)
+    monkeypatch.setattr("astrid.runtime.logging_config.get_logger", lambda name: _FakeLogger())
     monkeypatch.setattr(main_module, "maybe_handle_management_command", lambda cwd, argv: False)
     monkeypatch.setattr(main_module, "load_runtime_config", lambda cwd: None)
     monkeypatch.setattr(main_module, "MockModelAdapter", lambda: object())
-    monkeypatch.setattr("astrid.memory.MemoryManager", _FakeMemoryManager)
+    monkeypatch.setattr("astrid.state.memory.MemoryManager", _FakeMemoryManager)
     monkeypatch.setattr("astrid.advanced_memory.create_memory_integration", lambda *args, **kwargs: _FakeMemoryIntegration())
-    monkeypatch.setattr("astrid.skill_engine.create_default_skill_engine", lambda advanced_memory_mgr: object())
+    monkeypatch.setattr("astrid.integrations.skill_engine.create_default_skill_engine", lambda advanced_memory_mgr: object())
     monkeypatch.setattr(
-        "astrid.terminology_governance.create_terminology_governance_system",
+        "astrid.integrations.terminology_governance.create_terminology_governance_system",
         lambda advanced_memory_mgr: object(),
     )
     monkeypatch.setattr(
-        "astrid.bootstrap_system.create_bootstrap_system",
+        "astrid.integrations.bootstrap_system.create_bootstrap_system",
         lambda advanced_memory_mgr, skill_engine, terminology_governance: SimpleNamespace(
             execute_bootstrap_cycle=lambda payload: {"status": "ok"}
         ),

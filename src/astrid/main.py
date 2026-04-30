@@ -6,18 +6,18 @@ import sys
 from pathlib import Path
 
 from astrid.agent_loop import run_agent_turn, set_advanced_memory
-from astrid.anthropic_adapter import AnthropicModelAdapter
-from astrid.cli_commands import find_matching_slash_commands, try_handle_local_command
-from astrid.config import load_runtime_config
-from astrid.history import load_history_entries, save_history_entries
-from astrid.manage_cli import maybe_handle_management_command
-from astrid.mock_model import MockModelAdapter
+from astrid.integrations.anthropic_adapter import AnthropicModelAdapter
+from astrid.cli.cli_commands import find_matching_slash_commands, try_handle_local_command
+from astrid.runtime.config import load_runtime_config
+from astrid.state.history import load_history_entries, save_history_entries
+from astrid.cli.manage_cli import maybe_handle_management_command
+from astrid.integrations.mock_model import MockModelAdapter
 from astrid.permissions import PermissionManager
-from astrid.prompt import build_system_prompt
+from astrid.core.prompt import build_system_prompt
 from astrid.runtime.bootstrap import BootstrapDependencies, initialize_runtime_session
 from astrid.runtime.controller import RuntimeController, append_transcript
 from astrid.tools import create_default_tool_registry
-from astrid.tooling import ToolContext
+from astrid.core.tooling import ToolContext
 from astrid.tui.transcript import format_transcript_text
 from astrid.tui.types import TranscriptEntry
 from astrid.ui.common.text_input import normalize_cli_input, strip_leading_bom_mojibake
@@ -25,7 +25,7 @@ from astrid.ui.full.app import run_full_tui_app as run_tty_app
 from astrid.ui.shell.banner import render_banner, render_quick_start
 from astrid.ui.shell.pipe import run_pipe_inputs, should_render_legacy_intro
 from astrid.ui.shell.repl import render_shell_intro, run_shell_repl
-from astrid.workspace import resolve_tool_path
+from astrid.core.workspace import resolve_tool_path
 
 
 def _handle_local_command(user_input: str, tools) -> str | None:
@@ -169,11 +169,11 @@ def _make_runtime_controller(
 
 def _make_bootstrap_dependencies() -> BootstrapDependencies:
     from astrid.advanced_memory import create_memory_integration
-    from astrid.bootstrap_system import create_bootstrap_system
-    from astrid.context_manager import ContextManager
-    from astrid.memory import MemoryManager
-    from astrid.skill_engine import create_default_skill_engine
-    from astrid.terminology_governance import create_terminology_governance_system
+    from astrid.integrations.bootstrap_system import create_bootstrap_system
+    from astrid.core.context_manager import ContextManager
+    from astrid.state.memory import MemoryManager
+    from astrid.integrations.skill_engine import create_default_skill_engine
+    from astrid.integrations.terminology_governance import create_terminology_governance_system
 
     return BootstrapDependencies(
         load_runtime_config=load_runtime_config,
@@ -302,18 +302,18 @@ def main() -> None:
     parser = _build_parser()
     args, remaining = parser.parse_known_args()
 
-    from astrid.logging_config import setup_logging
+    from astrid.runtime.logging_config import setup_logging
 
     setup_logging(level=args.log_level)
 
     if args.validate_config:
-        from astrid.config import format_config_diagnostic
+        from astrid.runtime.config import format_config_diagnostic
 
         print(format_config_diagnostic())
         return
 
     if args.install:
-        from astrid.install import main as install_main
+        from astrid.cli.install import main as install_main
 
         install_main()
         return
@@ -325,14 +325,14 @@ def main() -> None:
     if remaining:
         parser.error(f"unrecognized arguments: {' '.join(remaining)}")
     if args.list_sessions:
-        from astrid.session import format_session_list, list_sessions
+        from astrid.state.session import format_session_list, list_sessions
 
         print(format_session_list(list_sessions()))
         return
 
     _apply_terminal_mode(_resolve_terminal_mode(shell_flag=args.shell, tui_flag=args.tui))
 
-    from astrid.logging_config import get_logger
+    from astrid.runtime.logging_config import get_logger
 
     logger = get_logger("main")
     prompt_handler = _make_cli_permission_prompt() if sys.stdin.isatty() else None

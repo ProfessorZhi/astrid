@@ -1,5 +1,5 @@
 from astrid.tools.write_file import _run, _validate
-from astrid.tooling import ToolDefinition
+from astrid.core.tooling import ToolDefinition
 
 
 modify_file_tool = ToolDefinition(

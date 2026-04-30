@@ -104,7 +104,7 @@ def test_store_state():
 
 def test_cost_tracker():
     """Test cost tracking."""
-    from astrid.cost_tracker import CostTracker
+    from astrid.runtime.cost_tracker import CostTracker
     
     tracker = CostTracker()
     
@@ -132,7 +132,7 @@ def test_cost_tracker():
 
 def test_context_manager():
     """Test context window management."""
-    from astrid.context_manager import ContextManager
+    from astrid.core.context_manager import ContextManager
     
     manager = ContextManager(model="default", context_window=100000)
     
@@ -155,7 +155,7 @@ def test_context_manager():
 
 def test_task_tracker():
     """Test task tracking."""
-    from astrid.task_tracker import TaskManager
+    from astrid.runtime.task_tracker import TaskManager
     
     tm = TaskManager()
     tm.create_list("Test Tasks")
@@ -181,7 +181,7 @@ def test_memory_system():
     """Test layered memory system."""
     import tempfile
     from pathlib import Path
-    from astrid.memory import MemoryManager, MemoryScope
+    from astrid.state.memory import MemoryManager, MemoryScope
     
     # Create temp workspace
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -215,7 +215,7 @@ def test_poly_commands():
         CommandRegistry, LocalCommand, CommandMetadata, create_builtin_commands
     )
     from astrid.state import create_app_store
-    from astrid.cost_tracker import CostTracker
+    from astrid.runtime.cost_tracker import CostTracker
     
     # Create registry
     registry = CommandRegistry()
@@ -274,7 +274,7 @@ def test_auto_mode():
 
 def test_hooks_system():
     """Test Hooks event system."""
-    from astrid.hooks import (
+    from astrid.integrations.hooks import (
         HookManager, HookEvent, register_hook, fire_hook_sync
     )
     
@@ -303,7 +303,7 @@ def test_hooks_system():
 
 def test_sub_agents():
     """Test Sub-agents system."""
-    from astrid.sub_agents import (
+    from astrid.core.sub_agents import (
         SubAgentManager, AgentType, AgentDefinition,
         choose_agent_type, should_use_sub_agent
     )
@@ -339,7 +339,7 @@ def test_sub_agents():
 
 def test_api_retry():
     """Test API retry mechanism."""
-    from astrid.api_retry import (
+    from astrid.integrations.api_retry import (
         retry_with_backoff, HTTPError, calculate_backoff
     )
     
@@ -373,17 +373,17 @@ def test_session_persistence():
     from pathlib import Path
     from unittest.mock import patch
     
-    from astrid.session import (
+    from astrid.state.session import (
         create_new_session, save_session, load_session,
         list_sessions, delete_session, AutosaveManager
     )
-    from astrid.config import ASTRID_DIR
+    from astrid.runtime.config import ASTRID_DIR
     
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         
-        with patch("astrid.session.SESSIONS_DIR", tmp_path / "sessions"), \
-             patch("astrid.session.ASTRID_DIR", tmp_path):
+        with patch("astrid.state.session.SESSIONS_DIR", tmp_path / "sessions"), \
+             patch("astrid.state.session.ASTRID_DIR", tmp_path):
             
             # Create session
             session = create_new_session(workspace="/tmp/test")
@@ -412,7 +412,7 @@ def test_session_persistence():
 def test_async_context():
     """Test async context collector."""
     import asyncio
-    from astrid.async_context import AsyncContextCollector
+    from astrid.core.async_context import AsyncContextCollector
     
     async def run_test():
         collector = AsyncContextCollector(str(Path.cwd()))

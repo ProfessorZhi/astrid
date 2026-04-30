@@ -7,7 +7,7 @@ from astrid.tools.multi_edit import multi_edit_tool
 from astrid.tools.run_command import run_command_tool
 from astrid.tools.todo_write import todo_write_tool
 from astrid.tools.write_file import write_file_tool
-from astrid.tooling import ToolContext
+from astrid.core.tooling import ToolContext
 
 
 def test_split_command_line_supports_quotes() -> None:

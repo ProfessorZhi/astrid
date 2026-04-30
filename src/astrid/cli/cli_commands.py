@@ -3,17 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from astrid.config import (
+from astrid.runtime.config import (
     ASTRID_MCP_PATH,
     ASTRID_PERMISSIONS_PATH,
     ASTRID_SETTINGS_PATH,
     load_runtime_config,
     save_mini_code_settings,
 )
-from astrid.history import load_history_entries
-from astrid.skills import _external_skills_root
-from astrid.task_tracker import TaskManager
-from astrid.tooling import ToolContext
+from astrid.state.history import load_history_entries
+from astrid.integrations.skills import _external_skills_root
+from astrid.runtime.task_tracker import TaskManager
+from astrid.core.tooling import ToolContext
 from astrid.tui.buddy import BUDDY_SPECIES
 
 
@@ -197,14 +197,14 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
         return f"{result.output}\nTip: run /skills to see discovered skill names."
 
     if user_input == "/config":
-        from astrid.config import format_config_diagnostic
+        from astrid.runtime.config import format_config_diagnostic
 
         return format_config_diagnostic()
 
     if user_input == "/memory":
         lines = ["Memory System Status", "=" * 50, ""]
         try:
-            from astrid.memory import memories_root, workspace_id
+            from astrid.state.memory import memories_root, workspace_id
 
             cwd = Path.cwd()
             lines.append(f"Memory root: {memories_root()}")
@@ -248,7 +248,7 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
 
         lines.append("")
         try:
-            from astrid.memory import MemoryManager
+            from astrid.state.memory import MemoryManager
 
             memory_mgr = MemoryManager(project_root=Path.cwd())
             basic_stats = memory_mgr.get_stats()
@@ -323,7 +323,7 @@ def try_handle_local_command(user_input: str, tools=None) -> str | None:
 
     if user_input == "/context":
         try:
-            from astrid.context_manager import load_context_state
+            from astrid.core.context_manager import load_context_state
 
             ctx_mgr = load_context_state()
             if ctx_mgr:

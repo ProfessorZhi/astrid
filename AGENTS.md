@@ -100,6 +100,8 @@
 
 第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager/types/tooling/workspace/orchestration/sub_agents/async_context/project_instructions/file_review` 进入 `core`，`history/session/memory` 进入 `state`，`config/logging/background_tasks/task_tracker/cost_tracker/local_tool_shortcuts` 进入 `runtime`，`anthropic_adapter/mcp/skills/hooks/mock_model/bootstrap_system/skill_engine/terminology_governance/api_retry/desktop_control` 进入 `integrations`，`cli_commands/manage_cli/install` 进入 `cli`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
 
+第三阶段后续已经把项目内部 import 改到新路径，并删除上述低风险模块的根部兼容 shim。后续不要为了短期方便重新在 `src/astrid/` 根部添加这些 shim；如果确实需要外部兼容层，要单独说明 public API 兼容目标和删除计划。
+
 目标边界：
 
 - `src/astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from astrid.project_instructions import format_project_instructions, load_project_instructions
+from astrid.core.project_instructions import format_project_instructions, load_project_instructions
 
 
 # ---------------------------------------------------------------------------

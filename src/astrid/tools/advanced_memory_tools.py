@@ -5,7 +5,7 @@ Exposes the advanced memory system capabilities as tools that the Agent can invo
 from __future__ import annotations
 
 import json
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 # 全局引用，由 main.py 注入
 _advanced_memory_mgr = None

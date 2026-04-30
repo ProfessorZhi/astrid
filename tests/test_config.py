@@ -1,7 +1,7 @@
 from pathlib import Path
 
-import astrid.config as config_mod
-from astrid.config import (
+import astrid.runtime.config as config_mod
+from astrid.runtime.config import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_TOOL_STEPS,
     DEFAULT_MODEL_TIMEOUT_SECONDS,

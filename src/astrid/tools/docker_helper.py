@@ -6,7 +6,7 @@ import subprocess
 import sys
 import re
 from typing import Any
-from astrid.tooling import ToolDefinition, ToolResult
+from astrid.core.tooling import ToolDefinition, ToolResult
 
 
 # ---------------------------------------------------------------------------
