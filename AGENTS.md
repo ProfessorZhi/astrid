@@ -98,13 +98,14 @@
 
 第二阶段目标是瘦身 `main.py` 和形成四条前端边界：`shell`、`pipe`、`inline`、`full`。`main.py` 只保留 argparse、管理命令分发、终端模式选择、frontend dispatch 和 shutdown cleanup；runtime 初始化进入 `astrid/runtime/bootstrap.py`，pipe 输入进入 `astrid/ui/shell/pipe.py`，banner/quick start 进入 `astrid/ui/shell/banner.py`。
 
-第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager/types/tooling/workspace/orchestration/sub_agents` 进入 `core`，`history/session/memory` 进入 `state`，`config/logging/background_tasks/task_tracker/cost_tracker/local_tool_shortcuts` 进入 `runtime`，`anthropic_adapter/mcp/skills/hooks/mock_model/bootstrap_system/skill_engine/terminology_governance/api_retry` 进入 `integrations`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
+第三阶段只移动低风险模块并保留兼容 shim：`prompt/context_manager/types/tooling/workspace/orchestration/sub_agents/async_context/project_instructions/file_review` 进入 `core`，`history/session/memory` 进入 `state`，`config/logging/background_tasks/task_tracker/cost_tracker/local_tool_shortcuts` 进入 `runtime`，`anthropic_adapter/mcp/skills/hooks/mock_model/bootstrap_system/skill_engine/terminology_governance/api_retry/desktop_control` 进入 `integrations`，`cli_commands/manage_cli/install` 进入 `cli`。不要在这一阶段移动 `agent_loop.py`、`permissions.py`、`advanced_memory.py`、`tty_app.py`、`tools/` 的主体实现；这些需要单独 PR 和更窄测试。
 
 目标边界：
 
 - `src/astrid/core/`：agent loop、prompt、context、sub-agents、orchestration 等核心能力。
 - `src/astrid/runtime/`：统一 controller、turn runner、事件模型、permission flow、queue/steer 协调。
 - `src/astrid/ui/`：`shell/`、`inline/`、`full/` 三个终端前端，`common/` 放共享输入、approval、transcript 辅助。
+- `src/astrid/cli/`：slash commands、management commands、installer 等命令行入口辅助。
 - `src/astrid/state/`：session、history、memory、advanced memory 等持久状态。
 - `src/astrid/integrations/`：Anthropic adapter、MCP、skills、hooks 和外部 provider。
 - `src/astrid/tools/`：暂时保留原位，后续单独整理工具注册和工具实现。
